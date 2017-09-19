@@ -13,6 +13,7 @@ add_executable(
     operators/projection_benchmark.cpp
     operators/sort_benchmark.cpp
     operators/sql_benchmark.cpp
+    operators/join_sort_merge_benchmark.cpp
     operators/table_scan_benchmark.cpp
     operators/union_all_benchmark.cpp
     table_generator.cpp
@@ -21,6 +22,26 @@ add_executable(
 
 target_link_libraries(
     opossumBenchmark
+    opossum
+    benchmark
+)
+
+add_executable(
+    opossumBenchmarkJoins
+
+    EXCLUDE_FROM_ALL
+
+    base_fixture.cpp
+    base_fixture.hpp
+    benchmark_main.cpp
+    benchmark_template.cpp
+    operators/join_sort_merge_benchmark.cpp
+    table_generator.cpp
+    table_generator.hpp
+)
+
+target_link_libraries(
+    opossumBenchmarkJoins
     opossum
     benchmark
 )

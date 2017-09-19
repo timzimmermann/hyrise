@@ -58,6 +58,37 @@ JoinSortMerge::JoinSortMerge(const std::shared_ptr<const AbstractOperator> left,
     *this, left_column_name, right_column_name, op, mode);
 }
 
+JoinSortMerge::JoinSortMerge(const std::shared_ptr<const AbstractOperator> left,
+                             const std::shared_ptr<const AbstractOperator> right,
+                             optional<std::pair<std::string, std::string>> column_names, const ScanType op,
+                             const JoinMode mode, const std::string& prefix_left, const std::string& prefix_right,
+                             size_t cluster_count)
+    : AbstractJoinOperator(left, right, column_names, op, mode, prefix_left, prefix_right) {
+  // Validate the parameters
+  DebugAssert(mode != JoinMode::Cross && column_names, "This operator does not support cross joins.");
+  DebugAssert(left != nullptr, "The left input operator is null.");
+  DebugAssert(right != nullptr, "The right input operator is null.");
+  DebugAssert(op == ScanType::OpEquals || op == ScanType::OpLessThan || op == ScanType::OpGreaterThan ||
+              op == ScanType::OpLessThanEquals || op == ScanType::OpGreaterThanEquals || op == ScanType::OpNotEquals,
+              "Unsupported scan type");
+  DebugAssert(op == ScanType::OpEquals || mode == JoinMode::Inner, "Outer joins are only implemented for equi joins.");
+
+  auto left_column_name = column_names->first;
+  auto right_column_name = column_names->second;
+
+  // Check column types
+  const auto left_column_id = input_table_left()->column_id_by_name(left_column_name);
+  const auto& left_column_type = input_table_left()->column_type(left_column_id);
+
+  DebugAssert(left_column_type == input_table_right()->column_type(
+                                                          input_table_right()->column_id_by_name(right_column_name)),
+              "Left and right column types do not match. The sort merge join requires matching column types");
+
+  // Create implementation to compute the join result
+  _impl = make_unique_by_column_type<AbstractJoinOperatorImpl, JoinSortMergeImpl>(left_column_type,
+    *this, left_column_name, right_column_name, op, mode, cluster_count);
+}
+
 std::shared_ptr<AbstractOperator> JoinSortMerge::recreate(const std::vector<AllParameterVariant> &args) const {
   Fail("Operator " + this->name() + " does not implement recreation.");
   return {};
@@ -77,12 +108,25 @@ uint8_t JoinSortMerge::num_out_tables() const { return 1u; }
 template <typename T>
 class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
  public:
+  /**
+  * Creates the Sort Mere Join operator with an automatically determined number of clusters.
+  **/
   JoinSortMergeImpl<T>(JoinSortMerge& sort_merge_join, std::string left_column_name,
                        std::string right_column_name, const ScanType op, JoinMode mode)
     : _sort_merge_join{sort_merge_join}, _left_column_name{left_column_name}, _right_column_name{right_column_name},
       _op{op}, _mode{mode} {
-
     _cluster_count = _determine_number_of_clusters();
+    _output_pos_lists_left.resize(_cluster_count);
+    _output_pos_lists_right.resize(_cluster_count);
+  }
+
+  /**
+  * Creates the Sort Mere Join operator with a specific number of clusters.
+  **/
+  JoinSortMergeImpl<T>(JoinSortMerge& sort_merge_join, std::string left_column_name,
+                       std::string right_column_name, const ScanType op, JoinMode mode, size_t cluster_count)
+    : _sort_merge_join{sort_merge_join}, _left_column_name{left_column_name}, _right_column_name{right_column_name},
+      _op{op}, _mode{mode}, _cluster_count{cluster_count} {
     _output_pos_lists_left.resize(_cluster_count);
     _output_pos_lists_right.resize(_cluster_count);
   }

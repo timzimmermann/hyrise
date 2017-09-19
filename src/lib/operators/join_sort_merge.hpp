@@ -36,6 +36,9 @@ class JoinSortMerge : public AbstractJoinOperator {
   JoinSortMerge(const std::shared_ptr<const AbstractOperator> left, const std::shared_ptr<const AbstractOperator> right,
                 optional<std::pair<std::string, std::string>> column_names, const ScanType op, const JoinMode mode,
                 const std::string& prefix_left, const std::string& prefix_right);
+  JoinSortMerge(const std::shared_ptr<const AbstractOperator> left, const std::shared_ptr<const AbstractOperator> right,
+                optional<std::pair<std::string, std::string>> column_names, const ScanType op, const JoinMode mode,
+                const std::string& prefix_left, const std::string& prefix_right, size_t cluster_count);
 
   std::shared_ptr<const Table> on_execute() override;
   std::shared_ptr<AbstractOperator> recreate(const std::vector<AllParameterVariant> &args) const override;

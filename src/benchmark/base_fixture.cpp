@@ -19,19 +19,24 @@ void BenchmarkBasicFixture::SetUp(::benchmark::State& state) {
   _chunk_size = static_cast<ChunkID>(state.range(0));
 
   auto table_generator = std::make_shared<TableGenerator>();
-
   auto table_generator2 = std::make_shared<TableGenerator>();
+  auto table_generato3 = std::make_shared<TableGenerator>();
+  auto table_generator4 = std::make_shared<TableGenerator>();
 
   _table_wrapper_a = std::make_shared<TableWrapper>(table_generator->get_table(_chunk_size));
   _table_wrapper_b = std::make_shared<TableWrapper>(table_generator2->get_table(_chunk_size));
   _table_wrapper_a->execute();
   _table_wrapper_b->execute();
+  _table_wrapper_c = std::make_shared<TableWrapper>(table_generato3->get_table(_chunk_size, 1000000));
+  _table_wrapper_d = std::make_shared<TableWrapper>(table_generator4->get_table(_chunk_size, 1000000));
+  _table_wrapper_c->execute();
+  _table_wrapper_d->execute();
 }
 
 void BenchmarkBasicFixture::TearDown(::benchmark::State&) { opossum::StorageManager::get().reset(); }
 
 void BenchmarkBasicFixture::ChunkSizeIn(benchmark::internal::Benchmark* b) {
-  for (ChunkID i : {ChunkID(0), ChunkID(10000), ChunkID(100000)}) {
+  for (ChunkID i : {/*ChunkID(0), ChunkID(10000), */ChunkID(100000)}) {
     b->Args({static_cast<int>(i)});  // i = chunk size
   }
 }
