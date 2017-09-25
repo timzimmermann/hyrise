@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "resolve_type.hpp"
-#include "join_sort_merge_utils/radix_cluster_sort.hpp"
+#include "join_sort_merge/radix_cluster_sort.hpp"
 
 namespace opossum {
 
@@ -30,11 +30,11 @@ namespace opossum {
 **/
 JoinSortMerge::JoinSortMerge(const std::shared_ptr<const AbstractOperator> left,
                              const std::shared_ptr<const AbstractOperator> right,
-                             optional<std::pair<std::string, std::string>> column_names, const ScanType op,
-                             const JoinMode mode, const std::string& prefix_left, const std::string& prefix_right)
-    : AbstractJoinOperator(left, right, column_names, op, mode, prefix_left, prefix_right) {
+                             const JoinMode mode,
+                             const std::pair<ColumnID, ColumnID>& column_ids, const ScanType op)
+    : AbstractJoinOperator(left, right, mode, column_ids, op) {
   // Validate the parameters
-  DebugAssert(mode != JoinMode::Cross && column_names, "This operator does not support cross joins.");
+  DebugAssert(mode != JoinMode::Cross, "This operator does not support cross joins.");
   DebugAssert(left != nullptr, "The left input operator is null.");
   DebugAssert(right != nullptr, "The right input operator is null.");
   DebugAssert(op == ScanType::OpEquals || op == ScanType::OpLessThan || op == ScanType::OpGreaterThan ||
@@ -42,51 +42,14 @@ JoinSortMerge::JoinSortMerge(const std::shared_ptr<const AbstractOperator> left,
               "Unsupported scan type");
   DebugAssert(op == ScanType::OpEquals || mode == JoinMode::Inner, "Outer joins are only implemented for equi joins.");
 
-  auto left_column_name = column_names->first;
-  auto right_column_name = column_names->second;
-
   // Check column types
-  const auto left_column_id = input_table_left()->column_id_by_name(left_column_name);
-  const auto& left_column_type = input_table_left()->column_type(left_column_id);
-
-  DebugAssert(left_column_type == input_table_right()->column_type(
-                                                          input_table_right()->column_id_by_name(right_column_name)),
+  const auto& left_column_type = _input_table_left()->column_type(column_ids.first);
+  DebugAssert(left_column_type == _input_table_right()->column_type(column_ids.second),
               "Left and right column types do not match. The sort merge join requires matching column types");
 
   // Create implementation to compute the join result
   _impl = make_unique_by_column_type<AbstractJoinOperatorImpl, JoinSortMergeImpl>(left_column_type,
-    *this, left_column_name, right_column_name, op, mode);
-}
-
-JoinSortMerge::JoinSortMerge(const std::shared_ptr<const AbstractOperator> left,
-                             const std::shared_ptr<const AbstractOperator> right,
-                             optional<std::pair<std::string, std::string>> column_names, const ScanType op,
-                             const JoinMode mode, const std::string& prefix_left, const std::string& prefix_right,
-                             size_t cluster_count)
-    : AbstractJoinOperator(left, right, column_names, op, mode, prefix_left, prefix_right) {
-  // Validate the parameters
-  DebugAssert(mode != JoinMode::Cross && column_names, "This operator does not support cross joins.");
-  DebugAssert(left != nullptr, "The left input operator is null.");
-  DebugAssert(right != nullptr, "The right input operator is null.");
-  DebugAssert(op == ScanType::OpEquals || op == ScanType::OpLessThan || op == ScanType::OpGreaterThan ||
-              op == ScanType::OpLessThanEquals || op == ScanType::OpGreaterThanEquals || op == ScanType::OpNotEquals,
-              "Unsupported scan type");
-  DebugAssert(op == ScanType::OpEquals || mode == JoinMode::Inner, "Outer joins are only implemented for equi joins.");
-
-  auto left_column_name = column_names->first;
-  auto right_column_name = column_names->second;
-
-  // Check column types
-  const auto left_column_id = input_table_left()->column_id_by_name(left_column_name);
-  const auto& left_column_type = input_table_left()->column_type(left_column_id);
-
-  DebugAssert(left_column_type == input_table_right()->column_type(
-                                                          input_table_right()->column_id_by_name(right_column_name)),
-              "Left and right column types do not match. The sort merge join requires matching column types");
-
-  // Create implementation to compute the join result
-  _impl = make_unique_by_column_type<AbstractJoinOperatorImpl, JoinSortMergeImpl>(left_column_type,
-    *this, left_column_name, right_column_name, op, mode, cluster_count);
+    *this, column_ids.first, column_ids.second, op, mode);
 }
 
 std::shared_ptr<AbstractOperator> JoinSortMerge::recreate(const std::vector<AllParameterVariant> &args) const {
@@ -94,7 +57,9 @@ std::shared_ptr<AbstractOperator> JoinSortMerge::recreate(const std::vector<AllP
   return {};
 }
 
-std::shared_ptr<const Table> JoinSortMerge::on_execute() { return _impl->on_execute(); }
+std::shared_ptr<const Table> JoinSortMerge::_on_execute() { return _impl->_on_execute(); }
+
+void JoinSortMerge::_on_cleanup() { _impl.reset(); }
 
 const std::string JoinSortMerge::name() const { return "JoinSortMerge"; }
 
@@ -108,25 +73,12 @@ uint8_t JoinSortMerge::num_out_tables() const { return 1u; }
 template <typename T>
 class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
  public:
-  /**
-  * Creates the Sort Mere Join operator with an automatically determined number of clusters.
-  **/
-  JoinSortMergeImpl<T>(JoinSortMerge& sort_merge_join, std::string left_column_name,
-                       std::string right_column_name, const ScanType op, JoinMode mode)
-    : _sort_merge_join{sort_merge_join}, _left_column_name{left_column_name}, _right_column_name{right_column_name},
+  JoinSortMergeImpl<T>(JoinSortMerge& sort_merge_join, ColumnID left_column_id,
+                       ColumnID right_column_id, const ScanType op, JoinMode mode)
+    : _sort_merge_join{sort_merge_join}, _left_column_id{left_column_id}, _right_column_id{right_column_id},
       _op{op}, _mode{mode} {
-    _cluster_count = _determine_number_of_clusters();
-    _output_pos_lists_left.resize(_cluster_count);
-    _output_pos_lists_right.resize(_cluster_count);
-  }
 
-  /**
-  * Creates the Sort Mere Join operator with a specific number of clusters.
-  **/
-  JoinSortMergeImpl<T>(JoinSortMerge& sort_merge_join, std::string left_column_name,
-                       std::string right_column_name, const ScanType op, JoinMode mode, size_t cluster_count)
-    : _sort_merge_join{sort_merge_join}, _left_column_name{left_column_name}, _right_column_name{right_column_name},
-      _op{op}, _mode{mode}, _cluster_count{cluster_count} {
+    _cluster_count = _determine_number_of_clusters();
     _output_pos_lists_left.resize(_cluster_count);
     _output_pos_lists_right.resize(_cluster_count);
   }
@@ -138,8 +90,8 @@ class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
   std::unique_ptr<MaterializedColumnList<T>> _sorted_left_table;
   std::unique_ptr<MaterializedColumnList<T>> _sorted_right_table;
 
-  const std::string _left_column_name;
-  const std::string _right_column_name;
+  const ColumnID _left_column_id;
+  const ColumnID _right_column_id;
 
   const ScanType _op;
   const JoinMode _mode;
@@ -203,8 +155,8 @@ class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
   size_t _determine_number_of_clusters() {
     // Get the next lower power of two of the bigger chunk number
     // Note: this is only provisional. There should be a reasonable calculation here based on hardware stats.
-    size_t chunk_count_left = _sort_merge_join.input_table_left()->chunk_count();
-    size_t chunk_count_right = _sort_merge_join.input_table_right()->chunk_count();
+    size_t chunk_count_left = _sort_merge_join._input_table_left()->chunk_count();
+    size_t chunk_count_right = _sort_merge_join._input_table_right()->chunk_count();
     return static_cast<size_t>(std::pow(2, std::floor(std::log2(std::max(chunk_count_left, chunk_count_right)))));
   }
 
@@ -232,9 +184,10 @@ class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
   **/
   void _join_runs(TableRange left_run, TableRange right_run, CompareResult compare_result) {
     size_t cluster_number = left_run.start.cluster;
-    if (_op == ScanType::OpEquals) {
+    switch (_op) {
+    case ScanType::OpEquals:
       if (compare_result == CompareResult::Equal) {
-        _emit_combinations(cluster_number, left_run, right_run);
+        _emit_all_combinations(cluster_number, left_run, right_run);
       } else if (compare_result == CompareResult::Less) {
         if (_mode == JoinMode::Left || _mode == JoinMode::Outer) {
           _emit_right_null_combinations(cluster_number, left_run);
@@ -244,36 +197,42 @@ class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
           _emit_left_null_combinations(cluster_number, right_run);
         }
       }
-    } else if (_op == ScanType::OpNotEquals) {
+      break;
+    case ScanType::OpNotEquals:
       if (compare_result == CompareResult::Greater) {
-        _emit_combinations(cluster_number, left_run.start.to(_end_of_left_table), right_run);
+        _emit_all_combinations(cluster_number, left_run.start.to(_end_of_left_table), right_run);
       } else if (compare_result == CompareResult::Equal) {
-        _emit_combinations(cluster_number, left_run.end.to(_end_of_left_table), right_run);
-        _emit_combinations(cluster_number, left_run, right_run.end.to(_end_of_right_table));
+        _emit_all_combinations(cluster_number, left_run.end.to(_end_of_left_table), right_run);
+        _emit_all_combinations(cluster_number, left_run, right_run.end.to(_end_of_right_table));
       } else if (compare_result == CompareResult::Less) {
-        _emit_combinations(cluster_number, left_run, right_run.start.to(_end_of_right_table));
+        _emit_all_combinations(cluster_number, left_run, right_run.start.to(_end_of_right_table));
       }
-    } else if (_op == ScanType::OpGreaterThan) {
+      break;
+    case ScanType::OpGreaterThan:
       if (compare_result == CompareResult::Greater) {
-        _emit_combinations(cluster_number, left_run.start.to(_end_of_left_table), right_run);
+        _emit_all_combinations(cluster_number, left_run.start.to(_end_of_left_table), right_run);
       } else if (compare_result == CompareResult::Equal) {
-        _emit_combinations(cluster_number, left_run.end.to(_end_of_left_table), right_run);
+        _emit_all_combinations(cluster_number, left_run.end.to(_end_of_left_table), right_run);
       }
-    } else if (_op == ScanType::OpGreaterThanEquals) {
+      break;
+    case ScanType::OpGreaterThanEquals:
       if (compare_result == CompareResult::Greater || compare_result == CompareResult::Equal) {
-        _emit_combinations(cluster_number, left_run.start.to(_end_of_left_table), right_run);
+        _emit_all_combinations(cluster_number, left_run.start.to(_end_of_left_table), right_run);
       }
-    } else if (_op == ScanType::OpLessThan) {
+      break;
+    case ScanType::OpLessThan:
       if (compare_result == CompareResult::Less) {
-        _emit_combinations(cluster_number, left_run, right_run.start.to(_end_of_right_table));
+        _emit_all_combinations(cluster_number, left_run, right_run.start.to(_end_of_right_table));
       } else if (compare_result == CompareResult::Equal) {
-        _emit_combinations(cluster_number, left_run, right_run.end.to(_end_of_right_table));
+        _emit_all_combinations(cluster_number, left_run, right_run.end.to(_end_of_right_table));
       }
-    } else if (_op == ScanType::OpLessThanEquals) {
+      break;
+    case ScanType::OpLessThanEquals:
       if (compare_result == CompareResult::Less || compare_result == CompareResult::Equal) {
-        _emit_combinations(cluster_number, left_run, right_run.start.to(_end_of_right_table));
+        _emit_all_combinations(cluster_number, left_run, right_run.start.to(_end_of_right_table));
       }
-    } else {
+      break;
+    default:
       throw std::logic_error("Unknown ScanType");
     }
   }
@@ -281,7 +240,7 @@ class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
   /**
   * Emits a combination of a lhs row id and a rhs row id to the join output.
   **/
-  void _emit_combination(size_t output_cluster, const RowID& left, const RowID& right) {
+  void _emit_combination(size_t output_cluster, RowID left, RowID right) {
     _output_pos_lists_left[output_cluster]->push_back(left);
     _output_pos_lists_right[output_cluster]->push_back(right);
   }
@@ -290,9 +249,9 @@ class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
   * Emits all the combinations of row ids from the left table range and the right table range to the join output.
   * I.e. the cross product of the ranges is emitted.
   **/
-  void _emit_combinations(size_t output_cluster, TableRange left_range, TableRange right_range) {
-    left_range.for_every_row_id(_sorted_left_table, [&](RowID& left_row_id) {
-      right_range.for_every_row_id(_sorted_right_table, [&](RowID& right_row_id) {
+  void _emit_all_combinations(size_t output_cluster, TableRange left_range, TableRange right_range) {
+    left_range.for_every_row_id(_sorted_left_table, [&](RowID left_row_id) {
+      right_range.for_every_row_id(_sorted_right_table, [&](RowID right_row_id) {
         this->_emit_combination(output_cluster, left_row_id, right_row_id);
       });
     });
@@ -302,7 +261,7 @@ class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
   * Emits all combinations of row ids from the left table range and a NULL value on the right side to the join output.
   **/
   void _emit_right_null_combinations(size_t output_cluster, TableRange left_range) {
-    left_range.for_every_row_id(_sorted_left_table, [&](RowID& left_row_id) {
+    left_range.for_every_row_id(_sorted_left_table, [&](RowID left_row_id) {
       this->_emit_combination(output_cluster, left_row_id, NULL_ROW_ID);
     });
   }
@@ -311,7 +270,7 @@ class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
   * Emits all combinations of row ids from the right table range and a NULL value on the left side to the join output.
   **/
   void _emit_left_null_combinations(size_t output_cluster, TableRange right_range) {
-    right_range.for_every_row_id(_sorted_right_table, [&](RowID& right_row_id) {
+    right_range.for_every_row_id(_sorted_right_table, [&](RowID right_row_id) {
       this->_emit_combination(output_cluster, NULL_ROW_ID, right_row_id);
     });
   }
@@ -325,13 +284,12 @@ class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
       return 0;
     }
 
-    auto& value = (*values)[start_index].value;
-    size_t offset = 1;
-    while (start_index + offset < values->size() && (*values)[start_index + offset].value == value) {
-      ++offset;
-    }
+    auto start_position = values->begin() + start_index;
+    auto result = std::upper_bound(start_position, values->end(), *start_position, [](const auto& a, const auto& b) {
+      return a.value < b.value;
+    });
 
-    return offset;
+    return result - start_position;
   }
 
   /**
@@ -447,11 +405,11 @@ class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
   * Adds the columns from an input table to the output table
   **/
   void _add_output_columns(std::shared_ptr<Table> output_table, std::shared_ptr<const Table> input_table,
-                          const std::string& prefix, std::shared_ptr<const PosList> pos_list) {
+                           std::shared_ptr<const PosList> pos_list) {
     auto column_count = input_table->col_count();
     for (ColumnID column_id{0}; column_id < column_count; ++column_id) {
       // Add the column definition
-      auto column_name = prefix + input_table->column_name(column_id);
+      auto column_name = input_table->column_name(column_id);
       auto column_type = input_table->column_type(column_id);
       output_table->add_column_definition(column_name, column_type);
 
@@ -499,9 +457,9 @@ class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
   /**
   * Executes the SortMergeJoin operator.
   **/
-  std::shared_ptr<const Table> on_execute() {
-    auto radix_clusterer = RadixClusterSort<T>(_sort_merge_join.input_table_left(),
-                                                  _sort_merge_join.input_table_right(), *_sort_merge_join._column_names,
+  std::shared_ptr<const Table> _on_execute() {
+    auto radix_clusterer = RadixClusterSort<T>(_sort_merge_join._input_table_left(),
+                                                  _sort_merge_join._input_table_right(), _sort_merge_join._column_ids,
                                                   _op == ScanType::OpEquals, _cluster_count);
     // Sort and cluster the input tables
     auto sort_output = radix_clusterer.execute();
@@ -519,10 +477,8 @@ class JoinSortMerge::JoinSortMergeImpl : public AbstractJoinOperatorImpl {
     auto output_right = _concatenate_pos_lists(_output_pos_lists_right);
 
     // Add the columns from both input tables to the output
-    _add_output_columns(output_table, _sort_merge_join.input_table_left(),
-                        _sort_merge_join._prefix_left, output_left);
-    _add_output_columns(output_table, _sort_merge_join.input_table_right(),
-                        _sort_merge_join._prefix_right, output_right);
+    _add_output_columns(output_table, _sort_merge_join._input_table_left(), output_left);
+    _add_output_columns(output_table, _sort_merge_join._input_table_right(), output_right);
 
     return output_table;
   }

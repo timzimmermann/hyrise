@@ -14,84 +14,84 @@ namespace opossum {
 
 BENCHMARK_DEFINE_F(BenchmarkBasicFixture, BM_JoinHash)(benchmark::State& state) {
   clear_cache();
-  auto scan_left = std::make_shared<TableScan>(_table_wrapper_c, ColumnName("a"), ScanType::OpGreaterThanEquals, 1000);
-  auto scan_right = std::make_shared<TableScan>(_table_wrapper_d, ColumnName("a"), ScanType::OpGreaterThanEquals, 1000);
+  auto scan_left = std::make_shared<TableScan>(_table_wrapper_c, ColumnID(0), ScanType::OpGreaterThanEquals, 1000);
+  auto scan_right = std::make_shared<TableScan>(_table_wrapper_d, ColumnID(0), ScanType::OpGreaterThanEquals, 1000);
   scan_left->execute();
   scan_right->execute();
 
   while (state.KeepRunning()) {
-    auto join = std::make_shared<JoinHash>(scan_left, scan_right,std::pair<std::string, std::string>("a", "a"),
-                                  ScanType::OpEquals, JoinMode::Inner, std::string("left"), std::string("right"));
+    auto join = std::make_shared<JoinHash>(scan_left, scan_right, JoinMode::Inner,
+                                        std::pair<ColumnID, ColumnID>(ColumnID(0), ColumnID(0)), ScanType::OpEquals);
     join->execute() ;
   }
 }
 
 BENCHMARK_DEFINE_F(BenchmarkBasicFixture, BM_JoinSortMerge1Partition)(benchmark::State& state) {
   clear_cache();
-  auto scan_left = std::make_shared<TableScan>(_table_wrapper_c, ColumnName("a"), ScanType::OpGreaterThanEquals, 1000);
-  auto scan_right = std::make_shared<TableScan>(_table_wrapper_d, ColumnName("a"), ScanType::OpGreaterThanEquals, 1000);
+  auto scan_left = std::make_shared<TableScan>(_table_wrapper_c, ColumnID(0), ScanType::OpGreaterThanEquals, 1000);
+  auto scan_right = std::make_shared<TableScan>(_table_wrapper_d, ColumnID(0), ScanType::OpGreaterThanEquals, 1000);
   scan_left->execute();
   scan_right->execute();
 
   while (state.KeepRunning()) {
-    auto join = std::make_shared<JoinSortMerge>(scan_left, scan_right,std::pair<std::string, std::string>("a", "a"),
-                                  ScanType::OpEquals, JoinMode::Inner, std::string("left"), std::string("right"), 1);
+    auto join = std::make_shared<JoinSortMerge>(scan_left, scan_right, JoinMode::Inner,
+                                      std::pair<ColumnID, ColumnID>(ColumnID(0), ColumnID(0)), ScanType::OpEquals, 1);
     join->execute();
   }
 }
 
 BENCHMARK_DEFINE_F(BenchmarkBasicFixture, BM_JoinSortMerge2Partitions)(benchmark::State& state) {
   clear_cache();
-  auto scan_left = std::make_shared<TableScan>(_table_wrapper_c, ColumnName("a"), ScanType::OpGreaterThanEquals, 1000);
-  auto scan_right = std::make_shared<TableScan>(_table_wrapper_d, ColumnName("a"), ScanType::OpGreaterThanEquals, 1000);
+  auto scan_left = std::make_shared<TableScan>(_table_wrapper_c, ColumnID(0), ScanType::OpGreaterThanEquals, 1000);
+  auto scan_right = std::make_shared<TableScan>(_table_wrapper_d, ColumnID(0), ScanType::OpGreaterThanEquals, 1000);
   scan_left->execute();
   scan_right->execute();
 
   while (state.KeepRunning()) {
-    auto join = std::make_shared<JoinSortMerge>(scan_left, scan_right,std::pair<std::string, std::string>("a", "a"),
-                                  ScanType::OpEquals, JoinMode::Inner, std::string("left"), std::string("right"), 2);
+    auto join = std::make_shared<JoinSortMerge>(scan_left, scan_right, JoinMode::Inner,
+                                      std::pair<ColumnID, ColumnID>(ColumnID(0), ColumnID(0)), ScanType::OpEquals, 2);
     join->execute();
   }
 }
 
 BENCHMARK_DEFINE_F(BenchmarkBasicFixture, BM_JoinSortMerge4Partitions)(benchmark::State& state) {
   clear_cache();
-  auto scan_left = std::make_shared<TableScan>(_table_wrapper_c, ColumnName("a"), ScanType::OpGreaterThanEquals, 1000);
-  auto scan_right = std::make_shared<TableScan>(_table_wrapper_d, ColumnName("a"), ScanType::OpGreaterThanEquals, 1000);
+  auto scan_left = std::make_shared<TableScan>(_table_wrapper_c, ColumnID(0), ScanType::OpGreaterThanEquals, 1000);
+  auto scan_right = std::make_shared<TableScan>(_table_wrapper_d, ColumnID(0), ScanType::OpGreaterThanEquals, 1000);
   scan_left->execute();
   scan_right->execute();
 
   while (state.KeepRunning()) {
-    auto join = std::make_shared<JoinSortMerge>(scan_left, scan_right,std::pair<std::string, std::string>("a", "a"),
-                                  ScanType::OpEquals, JoinMode::Inner, std::string("left"), std::string("right"), 4);
+    auto join = std::make_shared<JoinSortMerge>(scan_left, scan_right, JoinMode::Inner,
+                                      std::pair<ColumnID, ColumnID>(ColumnID(0), ColumnID(0)), ScanType::OpEquals, 4);
     join->execute();
   }
 }
 
 BENCHMARK_DEFINE_F(BenchmarkBasicFixture, BM_JoinSortMerge8Partitions)(benchmark::State& state) {
   clear_cache();
-  auto scan_left = std::make_shared<TableScan>(_table_wrapper_c, ColumnName("a"), ScanType::OpGreaterThanEquals, 1000);
-  auto scan_right = std::make_shared<TableScan>(_table_wrapper_d, ColumnName("a"), ScanType::OpGreaterThanEquals, 1000);
+  auto scan_left = std::make_shared<TableScan>(_table_wrapper_c, ColumnID(0), ScanType::OpGreaterThanEquals, 1000);
+  auto scan_right = std::make_shared<TableScan>(_table_wrapper_d, ColumnID(0), ScanType::OpGreaterThanEquals, 1000);
   scan_left->execute();
   scan_right->execute();
 
   while (state.KeepRunning()) {
-    auto join = std::make_shared<JoinSortMerge>(scan_left, scan_right,std::pair<std::string, std::string>("a", "a"),
-                                  ScanType::OpEquals, JoinMode::Inner, std::string("left"), std::string("right"), 8);
+    auto join = std::make_shared<JoinSortMerge>(scan_left, scan_right, JoinMode::Inner,
+                                      std::pair<ColumnID, ColumnID>(ColumnID(0), ColumnID(0)), ScanType::OpEquals, 8);
     join->execute();
   }
 }
 
 BENCHMARK_DEFINE_F(BenchmarkBasicFixture, BM_JoinSortMerge128Partitions)(benchmark::State& state) {
   clear_cache();
-  auto scan_left = std::make_shared<TableScan>(_table_wrapper_c, ColumnName("a"), ScanType::OpGreaterThanEquals, 1000);
-  auto scan_right = std::make_shared<TableScan>(_table_wrapper_d, ColumnName("a"), ScanType::OpGreaterThanEquals, 1000);
+  auto scan_left = std::make_shared<TableScan>(_table_wrapper_c, ColumnID(0), ScanType::OpGreaterThanEquals, 1000);
+  auto scan_right = std::make_shared<TableScan>(_table_wrapper_d, ColumnID(0), ScanType::OpGreaterThanEquals, 1000);
   scan_left->execute();
   scan_right->execute();
 
   while (state.KeepRunning()) {
-    auto join = std::make_shared<JoinSortMerge>(scan_left, scan_right,std::pair<std::string, std::string>("a", "a"),
-                                  ScanType::OpEquals, JoinMode::Inner, std::string("left"), std::string("right"), 128);
+    auto join = std::make_shared<JoinSortMerge>(scan_left, scan_right, JoinMode::Inner,
+                                    std::pair<ColumnID, ColumnID>(ColumnID(0), ColumnID(0)), ScanType::OpEquals, 128);
     join->execute();
   }
 }

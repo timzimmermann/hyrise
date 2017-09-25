@@ -10,8 +10,8 @@ class Table;
 
 class TableGenerator {
  public:
-  std::shared_ptr<Table> get_table(const ChunkID chunk_size);
-  std::shared_ptr<Table> get_table(const ChunkID chunk_size, size_t num_rows);
+  std::shared_ptr<Table> get_table(const ChunkID chunk_size, const bool compress);
+  std::shared_ptr<Table> get_table(const ChunkID chunk_size, const bool compress, size_t num_rows);
 
  protected:
   const size_t _num_columns = 10;

@@ -6,22 +6,34 @@
 #include <readline/history.h>
 #include <readline/readline.h>
 #include <setjmp.h>
-#include <csignal>
 #include <chrono>
+#include <csignal>
 #include <ctime>
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <regex>
 #include <string>
 #include <vector>
 
 #include "SQLParser.h"
+#include "concurrency/transaction_manager.hpp"
+#include "operators/get_table.hpp"
 #include "operators/import_csv.hpp"
 #include "operators/print.hpp"
+#include "planviz/sql_query_plan_visualizer.hpp"
 #include "sql/sql_planner.hpp"
 #include "storage/storage_manager.hpp"
 #include "tpcc/tpcc_table_generator.hpp"
 #include "utils/load_table.hpp"
+
+#define ANSI_COLOR_RED "\e[31m"
+#define ANSI_COLOR_GREEN "\e[32m"
+#define ANSI_COLOR_RESET "\e[0m"
+
+#define ANSI_COLOR_RED_RL "\001\e[31m\002"
+#define ANSI_COLOR_GREEN_RL "\001\e[32m\002"
+#define ANSI_COLOR_RESET_RL "\001\e[0m\002"
 
 namespace {
 
@@ -37,6 +49,22 @@ std::string current_timestamp() {
   oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
   return oss.str();
 }
+
+// Removes the coloring commands (e.g. '\e[31m') from input, to have a clean logfile.
+// If remove_rl_codes_only is true, then it only removes the Readline specific escape sequences '\001' and '\002'
+std::string remove_coloring(const std::string& input, bool remove_rl_codes_only = false) {
+  // matches any characters that need to be escaped in RegEx except for '|'
+  std::regex specialChars{R"([-[\]{}()*+?.,\^$#\s])"};
+  std::string sequences = "\e[31m|\e[32m|\e[0m|\001|\002";
+  if (remove_rl_codes_only) {
+    sequences = "\001|\002";
+  }
+  std::string sanitized_sequences = std::regex_replace(sequences, specialChars, R"(\$&)");
+
+  // Remove coloring commands and escape sequences before writing to logfile
+  std::regex expression{"(" + sanitized_sequences + ")"};
+  return std::regex_replace(input, expression, "");
+}
 }  // namespace
 
 namespace opossum {
@@ -46,6 +74,7 @@ namespace opossum {
 Console::Console()
     : _prompt("> "),
       _multiline_input(""),
+      _history_file(),
       _commands(),
       _tpcc_commands(),
       _out(std::cout.rdbuf()),
@@ -62,6 +91,8 @@ Console::Console()
   register_command("generate", generate_tpcc);
   register_command("load", load_table);
   register_command("script", exec_script);
+  register_command("print", print_table);
+  register_command("visualize", visualize);
 
   // Register words specifically for command completion purposes, e.g.
   // for TPC-C table generation, 'CUSTOMER', 'DISTRICT', etc
@@ -91,6 +122,12 @@ int Console::read() {
   // Only save non-empty commands to history
   if (!input.empty()) {
     add_history(buffer);
+    // Save command to history file
+    if (!_history_file.empty()) {
+      if (append_history(1, _history_file.c_str()) != 0) {
+        out("Error appending to history file: " + _history_file + "\n");
+      }
+    }
   }
 
   // Free buffer, since readline() allocates new string every time
@@ -108,7 +145,8 @@ int Console::_eval(const std::string& input) {
   }
 
   // Dump command to logfile, and to the Console if input comes from a script file
-  out(_prompt + input + "\n", _verbose);
+  // Also remove Readline specific escape sequences ('\001' and '\002') to make it look normal
+  out(remove_coloring(_prompt + input + "\n", true), _verbose);
 
   // Check if we already are in multiline input
   if (_multiline_input.empty()) {
@@ -207,10 +245,13 @@ int Console::_eval_sql(const std::string& sql) {
 
   // Execute query plan
   try {
-    // Compile the parse result
-    plan = SQLPlanner::plan(parse_result);
+    // Get Transaction context
+    static auto tx_context = TransactionManager::get().new_transaction_context();
+
     for (const auto& task : plan.tasks()) {
-      task->get_operator()->execute();
+      auto op = task->get_operator();
+      op->set_transaction_context(tx_context);
+      op->execute();
     }
   } catch (const std::exception& exception) {
     out("Exception thrown while executing query plan:\n  " + std::string(exception.what()) + "\n");
@@ -222,10 +263,13 @@ int Console::_eval_sql(const std::string& sql) {
   auto execution_elapsed_ms = std::chrono::duration<double>(done - started).count();
 
   auto table = plan.tree_roots().back()->get_output();
-  auto row_count = table->row_count();
+
+  auto row_count = table ? table->row_count() : 0;
 
   // Print result (to Console and logfile)
-  out(table);
+  if (table) {
+    out(table);
+  }
   out("===\n");
   out(std::to_string(row_count) + " rows (PARSE: " + std::to_string(parse_elapsed_ms) + " ms, COMPILE: " +
       std::to_string(plan_elapsed_ms) + " ms, EXECUTE: " + std::to_string(execution_elapsed_ms) + " ms (wall time))\n");
@@ -237,17 +281,42 @@ void Console::register_command(const std::string& name, const CommandFunction& f
 
 Console::RegisteredCommands Console::commands() { return _commands; }
 
-void Console::setPrompt(const std::string& prompt) { _prompt = prompt; }
+void Console::setPrompt(const std::string& prompt) {
+  if (IS_DEBUG) {
+    _prompt = ANSI_COLOR_RED_RL "(debug)" ANSI_COLOR_RESET_RL + prompt;
+  } else {
+    _prompt = ANSI_COLOR_GREEN_RL "(release)" ANSI_COLOR_RESET_RL + prompt;
+  }
+}
 
 void Console::setLogfile(const std::string& logfile) {
   _log = std::ofstream(logfile, std::ios_base::app | std::ios_base::out);
+}
+
+void Console::loadHistory(const std::string& history_file) {
+  _history_file = history_file;
+
+  // Check if history file exist, create empty history file if not
+  std::ifstream file(_history_file);
+  if (!file.good()) {
+    out("Creating history file: " + _history_file + "\n");
+    if (write_history(_history_file.c_str()) != 0) {
+      out("Error creating history file: " + _history_file + "\n");
+      return;
+    }
+  }
+
+  if (read_history(_history_file.c_str()) != 0) {
+    out("Error reading history file: " + _history_file + "\n");
+  }
 }
 
 void Console::out(const std::string& output, bool console_print) {
   if (console_print) {
     _out << output;
   }
-  _log << output;
+  // Remove coloring commands like '\e[32m' when writing to logfile
+  _log << remove_coloring(output);
   _log.flush();
 }
 
@@ -269,6 +338,8 @@ int Console::help(const std::string&) {
   console.out(
       "  load FILE TABLENAME  - Load table from disc specified by filepath FILE, store it with name TABLENAME\n");
   console.out("  script SCRIPTFILE    - Execute script specified by SCRIPTFILE\n");
+  console.out("  print TABLENAME      - Fully prints the given table\n");
+  console.out("  visualize SQL        - Visualizes a SQL query\n");
   console.out("  exit                 - Exit the HYRISE Console\n");
   console.out("  quit                 - Exit the HYRISE Console\n");
   console.out("  help                 - Show this message\n\n");
@@ -345,6 +416,84 @@ int Console::load_table(const std::string& args) {
   return ReturnCode::Ok;
 }
 
+int Console::print_table(const std::string& args) {
+  auto& console = Console::get();
+  std::string input = args;
+  boost::algorithm::trim<std::string>(input);
+  std::vector<std::string> arguments;
+  boost::algorithm::split(arguments, input, boost::is_space());
+
+  if (arguments.size() != 1) {
+    console.out("Usage:\n");
+    console.out("  print TABLENAME\n");
+    return ReturnCode::Error;
+  }
+
+  const std::string& tablename = arguments.at(0);
+
+  auto gt = std::make_shared<GetTable>(tablename);
+  try {
+    gt->execute();
+  } catch (const std::exception& exception) {
+    console.out("Exception thrown while loading table:\n  " + std::string(exception.what()) + "\n");
+    return ReturnCode::Error;
+  }
+
+  auto print = std::make_shared<Print>(gt, std::cout, PrintMvcc);
+  try {
+    print->execute();
+  } catch (const std::exception& exception) {
+    console.out("Exception thrown while printing table:\n  " + std::string(exception.what()) + "\n");
+    return ReturnCode::Error;
+  }
+
+  return ReturnCode::Ok;
+}
+
+int Console::visualize(const std::string& sql) {
+  auto& console = Console::get();
+  SQLQueryPlan plan;
+  hsql::SQLParserResult parse_result;
+
+  try {
+    hsql::SQLParser::parse(sql, &parse_result);
+  } catch (const std::exception& exception) {
+    console.out("Exception thrown while parsing SQL query:\n  " + std::string(exception.what()) + "\n");
+    return ReturnCode::Error;
+  }
+
+  // Check if SQL query is valid
+  if (!parse_result.isValid()) {
+    console.out("Error: SQL query not valid.\n");
+    return 1;
+  }
+
+  // Compile the parse result
+  try {
+    plan = SQLPlanner::plan(parse_result);
+  } catch (const std::exception& exception) {
+    console.out("Exception thrown while compiling query plan:\n  " + std::string(exception.what()) + "\n");
+    return ReturnCode::Error;
+  }
+
+  SQLQueryPlanVisualizer::visualize(plan);
+
+  auto ret = system("./scripts/planviz/is_iterm2.sh");
+  if (ret != 0) {
+    std::string msg{"Currently, only iTerm2 can print the visualization inline. You can find the plan at"};
+    msg += SQLQueryPlanVisualizer::png_filename + "\n";
+    console.out(msg);
+
+    return ReturnCode::Ok;
+  }
+
+  auto cmd = std::string("./scripts/planviz/imgcat.sh ") + SQLQueryPlanVisualizer::png_filename;
+  ret = system(cmd.c_str());
+  Assert(ret == 0, "Printing the image using ./scripts/imgcat.sh failed.");
+
+  return ReturnCode::Ok;
+}
+
 int Console::exec_script(const std::string& script_file) {
   auto& console = Console::get();
   auto filepath = script_file;
@@ -377,7 +526,7 @@ void Console::handle_signal(int sig) {
     auto& console = Console::get();
     console._out << "\n";
     console._multiline_input = "";
-    console._prompt = "!> ";
+    console.setPrompt("!> ");
     console._verbose = false;
     // Restore program state stored in jmp_env set with sigsetjmp(2)
     siglongjmp(jmp_env, 1);
@@ -472,6 +621,9 @@ int main(int argc, char** argv) {
   console.setPrompt("> ");
   console.setLogfile("console.log");
 
+  // Load command history
+  console.loadHistory(".repl_history");
+
   // Timestamp dump only to logfile
   console.out("--- Session start --- " + current_timestamp() + "\n", false);
 
@@ -499,6 +651,14 @@ int main(int argc, char** argv) {
     console.out("HYRISE SQL Interface\n");
     console.out("Enter 'generate' to generate the TPC-C tables. Then, you can enter SQL queries.\n");
     console.out("Type 'help' for more information.\n\n");
+
+    console.out("Hyrise is running a ");
+    if (IS_DEBUG) {
+      console.out(ANSI_COLOR_RED "(debug)" ANSI_COLOR_RESET);
+    } else {
+      console.out(ANSI_COLOR_GREEN "(release)" ANSI_COLOR_RESET);
+    }
+    console.out(" build.\n\n");
   }
 
   // Set jmp_env to current program state in preparation for siglongjmp(2)

@@ -11,6 +11,7 @@
 #include "tbb/concurrent_vector.h"
 
 #include "storage/chunk.hpp"
+#include "storage/dictionary_compression.hpp"
 #include "storage/table.hpp"
 #include "storage/value_column.hpp"
 
@@ -18,14 +19,14 @@
 
 namespace opossum {
 
-std::shared_ptr<Table> TableGenerator::get_table(const ChunkID chunk_size) {
-  return get_table(chunk_size, _num_rows);
+std::shared_ptr<Table> TableGenerator::get_table(const ChunkID chunk_size, const bool compress) {
+  return get_table(chunk_size, compress, _num_rows);
 }
 
-std::shared_ptr<Table> TableGenerator::get_table(const ChunkID chunk_size, size_t num_rows) {
+std::shared_ptr<Table> TableGenerator::get_table(const ChunkID chunk_size, const bool compress, size_t num_rows) {
   std::shared_ptr<Table> table = std::make_shared<Table>(chunk_size);
   std::vector<tbb::concurrent_vector<int>> value_vectors;
-  auto vector_size = chunk_size > 0 ? chunk_size : num_rows;
+  auto vector_size = chunk_size > 0 ? chunk_size : _num_rows;
   /*
    * Generate table layout with column names from 'a' to 'z'.
    * Create a vector for each column.
@@ -38,7 +39,7 @@ std::shared_ptr<Table> TableGenerator::get_table(const ChunkID chunk_size, size_
   auto chunk = Chunk();
   std::default_random_engine engine;
   std::uniform_int_distribution<int> dist(0, _max_different_value);
-  for (size_t i = 0; i < num_rows; i++) {
+  for (size_t i = 0; i < _num_rows; i++) {
     /*
      * Add vectors to chunk when full, and add chunk to table.
      * Reset vectors and chunk.
@@ -67,6 +68,11 @@ std::shared_ptr<Table> TableGenerator::get_table(const ChunkID chunk_size, size_
     }
     table->add_chunk(std::move(chunk));
   }
+
+  if (compress) {
+    DictionaryCompression::compress_table(*table);
+  }
+
   return table;
 }
 }  // namespace opossum

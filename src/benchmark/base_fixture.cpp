@@ -23,14 +23,16 @@ void BenchmarkBasicFixture::SetUp(::benchmark::State& state) {
   auto table_generato3 = std::make_shared<TableGenerator>();
   auto table_generator4 = std::make_shared<TableGenerator>();
 
-  _table_wrapper_a = std::make_shared<TableWrapper>(table_generator->get_table(_chunk_size));
-  _table_wrapper_b = std::make_shared<TableWrapper>(table_generator2->get_table(_chunk_size));
+  _table_wrapper_a = std::make_shared<TableWrapper>(table_generator->get_table(_chunk_size, true));
+  _table_wrapper_b = std::make_shared<TableWrapper>(table_generator2->get_table(_chunk_size, true));
+  _table_dict_wrapper = std::make_shared<TableWrapper>(table_generator->get_table(_chunk_size, true));
   _table_wrapper_a->execute();
   _table_wrapper_b->execute();
   _table_wrapper_c = std::make_shared<TableWrapper>(table_generato3->get_table(_chunk_size, 1000000));
   _table_wrapper_d = std::make_shared<TableWrapper>(table_generator4->get_table(_chunk_size, 1000000));
   _table_wrapper_c->execute();
   _table_wrapper_d->execute();
+  _table_dict_wrapper->execute();
 }
 
 void BenchmarkBasicFixture::TearDown(::benchmark::State&) { opossum::StorageManager::get().reset(); }
