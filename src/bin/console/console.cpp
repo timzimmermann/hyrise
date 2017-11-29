@@ -300,10 +300,9 @@ int Console::_eval_sql(const std::string& sql) {
 }
 
 int Console::_execute_plan(const SQLQueryPlan& plan) {
+  auto tasks = plan.create_tasks();
   try {
-    for (const auto& task : plan.create_tasks()) {
-      task->schedule();
-    }
+    CurrentScheduler::schedule_and_wait_for_tasks(tasks);
   } catch (const std::exception& exception) {
     out("Exception thrown while executing query plan:\n  " + std::string(exception.what()) + "\n");
     return ReturnCode::Error;
