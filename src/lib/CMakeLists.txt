@@ -105,6 +105,8 @@ set(
     operators/join_sort_merge.hpp
     operators/limit.cpp
     operators/limit.hpp
+    operators/materialize.cpp
+    operators/materialize.hpp
     operators/maintenance/create_view.cpp
     operators/maintenance/create_view.hpp
     operators/maintenance/drop_view.cpp
