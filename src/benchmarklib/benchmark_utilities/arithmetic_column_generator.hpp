@@ -40,12 +40,12 @@ class ArithmeticColumnGenerator {
       const T mean, const T std_dev, std::optional<OutlierParams> outlier_params) const;
 
  private:
-  opossum::pmr_vector<bool> generate_null_values() const;
+  opossum::pmr_concurrent_vector<bool> generate_null_values() const;
 
-  std::shared_ptr<opossum::ValueColumn<T>> column_from_values(opossum::pmr_vector<T> values) const;
+  std::shared_ptr<opossum::ValueColumn<T>> column_from_values(opossum::pmr_concurrent_vector<T> values) const;
 
-  std::shared_ptr<opossum::ValueColumn<T>> column_from_data(opossum::pmr_vector<T> values,
-                                                            opossum::pmr_vector<bool> null_values) const;
+  std::shared_ptr<opossum::ValueColumn<T>> column_from_data(opossum::pmr_concurrent_vector<T> values,
+                                                            opossum::pmr_concurrent_vector<bool> null_values) const;
 
  private:
   const opossum::DataType _data_type;

@@ -55,7 +55,7 @@ std::shared_ptr<ValueColumn<T>> ArithmeticColumnGenerator<T>::uniformly_distribu
   std::mt19937 gen{};
   auto dist = get_uniform_dist(min, max);
 
-  auto values = pmr_vector<T>(_row_count, _alloc);
+  auto values = pmr_concurrent_vector<T>(_row_count, _alloc);
   for (auto i = 0u; i < _row_count; ++i) {
     values[i] = dist(gen);
   }
@@ -79,7 +79,7 @@ std::shared_ptr<ValueColumn<T>> ArithmeticColumnGenerator<T>::uniformly_distribu
 
 template <typename T>
 std::shared_ptr<ValueColumn<T>> ArithmeticColumnGenerator<T>::normally_distributed_column(const T mean, const T std_dev, std::optional<OutlierParams> outlier_params) const {
-  auto values = pmr_vector<T>(_row_count, _alloc);
+  auto values = pmr_concurrent_vector<T>(_row_count, _alloc);
 
   std::mt19937 gen{};
   auto dist = std::normal_distribution<double>(mean, std_dev);
@@ -114,10 +114,10 @@ std::shared_ptr<ValueColumn<T>> ArithmeticColumnGenerator<T>::normally_distribut
 }
 
 template <typename T>
-opossum::pmr_vector<bool> ArithmeticColumnGenerator<T>::generate_null_values() const {
+opossum::pmr_concurrent_vector<bool> ArithmeticColumnGenerator<T>::generate_null_values() const {
   std::mt19937 gen{};
 
-  auto null_values = pmr_vector<bool>(_row_count, false, _alloc);
+  auto null_values = pmr_concurrent_vector<bool>(_row_count, false, _alloc);
 
   if (_sorted) {
     const auto begin_index = static_cast<size_t>(std::round((1.0f - _null_fraction) * _row_count));
@@ -130,14 +130,14 @@ opossum::pmr_vector<bool> ArithmeticColumnGenerator<T>::generate_null_values() c
 }
 
 template <typename T>
-std::shared_ptr<ValueColumn<T>> ArithmeticColumnGenerator<T>::column_from_values(pmr_vector<T> values) const {
+std::shared_ptr<ValueColumn<T>> ArithmeticColumnGenerator<T>::column_from_values(pmr_concurrent_vector<T> values) const {
   return std::allocate_shared<ValueColumn<T>>(_alloc, std::move(values));
 }
 
 template <typename T>
 std::shared_ptr<ValueColumn<T>> ArithmeticColumnGenerator<T>::column_from_data(
-    pmr_vector<T> values,
-    pmr_vector<bool> null_values) const {
+    pmr_concurrent_vector<T> values,
+    pmr_concurrent_vector<bool> null_values) const {
   return std::allocate_shared<ValueColumn<T>>(_alloc, std::move(values), std::move(null_values));
 }
 
