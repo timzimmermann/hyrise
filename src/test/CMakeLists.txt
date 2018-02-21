@@ -46,6 +46,7 @@ set(
     operators/insert_test.cpp
     operators/join_equi_test.cpp
     operators/join_full_test.cpp
+    operators/join_hash_test.cpp
     operators/join_null_test.cpp
     operators/join_semi_anti_test.cpp
     operators/join_test.hpp
@@ -72,6 +73,7 @@ set(
     optimizer/expression_test.cpp
     optimizer/lqp_translator_test.cpp
     optimizer/optimizer_test.cpp
+    optimizer/strategy/constant_calculation_rule_test.cpp
     optimizer/strategy/index_scan_rule_test.cpp
     optimizer/strategy/join_detection_rule_test.cpp
     optimizer/strategy/predicate_reordering_test.cpp

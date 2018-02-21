@@ -73,7 +73,7 @@ class AbstractLQPNode : public std::enable_shared_from_this<AbstractLQPNode>, pr
   explicit AbstractLQPNode(LQPNodeType node_type);
 
   // Creates a deep copy
-  virtual std::shared_ptr<AbstractLQPNode> deep_copy() const;
+  std::shared_ptr<AbstractLQPNode> deep_copy() const;
 
   // @{
   /**
@@ -265,6 +265,11 @@ class AbstractLQPNode : public std::enable_shared_from_this<AbstractLQPNode>, pr
    */
 
  protected:
+  // Holds the actual implementation of deep_copy
+  using PreviousCopiesMap =
+      std::unordered_map<std::shared_ptr<const AbstractLQPNode>, std::shared_ptr<AbstractLQPNode>>;
+  std::shared_ptr<AbstractLQPNode> _deep_copy(PreviousCopiesMap& previous_copies) const;
+
   /**
    * Override and create a DEEP copy of this LQP node. Used for reusing LQPs, e.g., in views.
    * @param left_child and @param right_child are deep copies of the left and right child respectively, used for deep-copying
@@ -310,14 +315,6 @@ class AbstractLQPNode : public std::enable_shared_from_this<AbstractLQPNode>, pr
    * Reset statistics, call _on_child_changed() for node specific behaviour and call _child_changed() on parents
    */
   void _child_changed();
-
-  /**
-   * Actual impl of AbstractLQPNode::print(). AbstractLQPNode::print() just creates the `levels` and `id_by_node`
-   * instances used during the recursion.
-   */
-  void _print_impl(std::ostream& out, std::vector<bool>& levels,
-                   std::unordered_map<std::shared_ptr<const AbstractLQPNode>, size_t>& id_by_node,
-                   size_t& id_counter) const;
 
   // @{
   /**
