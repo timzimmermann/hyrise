@@ -56,6 +56,7 @@ std::shared_ptr<ValueColumn<T>> ArithmeticColumnGenerator<T>::uniformly_distribu
   auto dist = get_uniform_dist(min, max);
 
   auto values = pmr_concurrent_vector<T>(_row_count, _alloc);
+
   for (auto i = 0u; i < _row_count; ++i) {
     values[i] = dist(gen);
   }
@@ -67,42 +68,6 @@ std::shared_ptr<ValueColumn<T>> ArithmeticColumnGenerator<T>::uniformly_distribu
     } else {
       std::sort(values.begin(), values.end());
     }
-  }
-
-  if (_null_fraction > 0.0f) {
-    auto null_values = generate_null_values();
-    return column_from_data(std::move(values), std::move(null_values));
-  }
-
-  return column_from_values(std::move(values));
-}
-
-template <typename T>
-std::shared_ptr<ValueColumn<T>> ArithmeticColumnGenerator<T>::normally_distributed_column(const T mean, const T std_dev, std::optional<OutlierParams> outlier_params) const {
-  auto values = pmr_concurrent_vector<T>(_row_count, _alloc);
-
-  std::mt19937 gen{};
-  auto dist = std::normal_distribution<double>(mean, std_dev);
-
-  if (!outlier_params) {
-    for (auto i = 0u; i < _row_count; ++i) {
-      values[i] = dist(gen);
-    }
-  } else {
-    auto is_outlier_dist = std::bernoulli_distribution(outlier_params->fraction);
-    auto outlier_dist = std::normal_distribution<double>(outlier_params->mean, outlier_params->std_dev);
-
-    for (auto i = 0u; i < _row_count; ++i) {
-      if (is_outlier_dist(gen)) {
-        values [i] = outlier_dist(gen);
-      } else {
-        values[i] = dist(gen);
-      }
-    }
-  }
-
-  if (_sorted) {
-    std::sort(values.begin(), values.end());
   }
 
   if (_null_fraction > 0.0f) {

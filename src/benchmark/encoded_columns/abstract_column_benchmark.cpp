@@ -60,11 +60,20 @@ std::shared_ptr<PosList> AbstractColumnBenchmark::_generate_pos_list(ChunkOffset
     return d(gen);
   };
 
+  const auto num_positions = row_count * point_access_factor;
+  auto accesses = std::vector<bool>(row_count, false);
+  std::fill_n(accesses.begin(), num_positions, true);
+
+  auto random_device = std::random_device{};
+  std::default_random_engine engine{random_device()};
+  std::shuffle(accesses.begin(), accesses.end(), engine);
+
   auto pos_list = PosList{};
-  pos_list.reserve(row_count);
+  pos_list.reserve(num_positions);
 
   for (ChunkOffset chunk_offset{0}; chunk_offset < row_count; ++chunk_offset) {
-    if (is_accessed()) pos_list.push_back(RowID{ChunkID{0u}, chunk_offset});
+    const auto access = accesses[chunk_offset];
+    if (access) pos_list.push_back(RowID{ChunkID{0u}, chunk_offset});
   }
 
   return std::make_shared<PosList>(std::move(pos_list));

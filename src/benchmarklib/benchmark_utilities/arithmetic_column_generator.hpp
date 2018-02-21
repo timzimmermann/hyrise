@@ -30,15 +30,6 @@ class ArithmeticColumnGenerator {
 
   std::shared_ptr<opossum::ValueColumn<T>> uniformly_distributed_column(const T min, const T max) const;
 
-  struct OutlierParams {
-    const double fraction;
-    const T mean;
-    const T std_dev;
-  };
-
-  std::shared_ptr<opossum::ValueColumn<T>> normally_distributed_column(
-      const T mean, const T std_dev, std::optional<OutlierParams> outlier_params) const;
-
  private:
   opossum::pmr_concurrent_vector<bool> generate_null_values() const;
 
