@@ -120,6 +120,8 @@ using ColumnNameLength = uint8_t;  // The length of column names must fit in thi
 using AttributeVectorWidth = uint8_t;
 
 using PosList = pmr_vector<RowID>;
+using PosListIterator = PosList::const_iterator;
+
 using ColumnIDPair = std::pair<ColumnID, ColumnID>;
 
 constexpr NodeID INVALID_NODE_ID{std::numeric_limits<NodeID::base_type>::max()};
@@ -240,6 +242,8 @@ enum class TableType { References, Data };
 enum class DescriptionMode { SingleLine, MultiLine };
 
 enum class UseMvcc : bool { Yes = true, No = false };
+
+enum class PosListType { SingleChunk, MultiChunk };
 
 class Noncopyable {
  protected:
