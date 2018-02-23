@@ -147,10 +147,12 @@ void SingleColumnTableScanImpl::_handle_dictionary_column(const BaseDictionaryCo
       this->_unary_scan(always_true, left_it, left_end, chunk_id, matches_out);
     });
 
+    Fail("_right_value_matches_all");
     return;
   }
 
   if (_right_value_matches_none(left_column, search_value_id)) {
+    Fail("_right_value_matches_none");
     return;
   }
 

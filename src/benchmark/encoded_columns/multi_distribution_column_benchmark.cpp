@@ -17,10 +17,13 @@
 
 namespace opossum {
 
-MultiDistributionColumnBenchmark::MultiDistributionColumnBenchmark(nlohmann::json description)
-    : _description(std::move(description)), _context(_description["context"]) {}
+MultiDistributionColumnBenchmark::MultiDistributionColumnBenchmark(CalibrationType calibration_type,
+                                                                   nlohmann::json description)
+    : _calibration_type(calibration_type), _description(std::move(description)), _context(_description["context"]) {}
 
 void MultiDistributionColumnBenchmark::run() {
+  std::cout << "Benchmark started: " << to_string(_calibration_type) << std::endl;
+
   auto remaining_count = _description["benchmarks"].size();
   for (auto& benchmark : _description["benchmarks"]) {
     std::cout << "Benchmark: " << benchmark << std::endl;
@@ -63,17 +66,30 @@ void MultiDistributionColumnBenchmark::run() {
       return encoder->encode(value_column, DataType::Int);
     }();
 
-    const auto selectivity = _value_or_default(benchmark, "selectivity").get<float>();
+    // Get any value that is not NULL
+    const auto select_eq = [&]() {
+      for (auto row_id = 0u; row_id < value_column->size(); ++row_id) {
+        if (!value_column->is_null(row_id))
+          return value_column->get(row_id);
+      }
 
-    const auto not_null_fraction = (1.0f - null_fraction);
-    const auto relative_selectivity = (not_null_fraction == 0.0f) ? 0.0f : selectivity / (1.0f - null_fraction);
+      Fail("Ups");
+    }();
 
-    [[maybe_unused]] const auto select_lteq = static_cast<int>(std::round(relative_selectivity * (max_value + 1)) - 1);
+    const auto point_access_factor = _value_or_default(benchmark, "point_access_factor").get<float>();
 
-    [[maybe_unused]] const auto point_access_factor = _value_or_default(benchmark, "point_access_factor").get<float>();
-
-    // auto benchmark_state = benchmark_table_scan(encoded_column, select_lteq, point_access_factor);
-    auto benchmark_state = benchmark_materialize(encoded_column, point_access_factor);
+    auto benchmark_state = [&]() {
+      switch (_calibration_type) {
+        case CalibrationType::CompleteTableScan:
+          return benchmark_table_scan(encoded_column, select_eq);
+        case CalibrationType::FilteredTableScan:
+          return benchmark_table_scan(encoded_column, select_eq, point_access_factor);
+        case CalibrationType::Materialization:
+          return benchmark_materialize(encoded_column, point_access_factor);
+        default:
+          Fail("Unrecognized type.");
+      }
+    }();
 
     auto results_in_ms = to_ms(benchmark_state.results());
 
@@ -140,7 +156,7 @@ void MultiDistributionColumnBenchmark::_output_as_csv(const nlohmann::json& data
   auto local_time = *std::localtime(&current_time);
 
   std::stringstream file_name;
-  file_name << "results_" << std::put_time(&local_time, "%Y-%m-%d_%H-%M-%S") << ".csv";
+  file_name << to_string(_calibration_type) << '_' << std::put_time(&local_time, "%Y-%m-%d_%H-%M-%S") << ".csv";
 
   auto output_file = std::ofstream(file_name.str());
 
@@ -210,8 +226,12 @@ void MultiDistributionColumnBenchmark::_generate_statistics(nlohmann::json& benc
     }
   }
 
+  const auto unique_count = value_set.size();
+  const auto selectivity = 1.0 / unique_count;
+
   benchmark["run_count"] = run_count;
-  benchmark["unique_count"] = value_set.size();
+  benchmark["unique_count"] = unique_count;
+  benchmark["selectivity"] = selectivity;
 }
 
 nlohmann::json MultiDistributionColumnBenchmark::_value_or_default(const nlohmann::json& benchmark,

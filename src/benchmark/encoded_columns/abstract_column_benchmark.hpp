@@ -67,7 +67,7 @@ class AbstractColumnBenchmark {
     return benchmark_state;
   }
 
-  const BenchmarkState benchmark_table_scan(const std::shared_ptr<BaseColumn>& base_column, const int select_lteq) {
+  const BenchmarkState benchmark_table_scan(const std::shared_ptr<BaseColumn>& base_column, const int32_t select_eq) {
     auto chunk = std::make_shared<Chunk>();
     chunk->add_column(base_column);
 
@@ -81,8 +81,8 @@ class AbstractColumnBenchmark {
     auto benchmark_state = BenchmarkState{max_num_iterations, max_duration};
 
     while (benchmark_state.keep_running()) {
-      auto table_scan = std::make_shared<TableScan>(wrapped_table, ColumnID{0u}, PredicateCondition::LessThanEquals,
-                                                    AllTypeVariant{select_lteq});
+      auto table_scan = std::make_shared<TableScan>(wrapped_table, ColumnID{0u}, PredicateCondition::Equals,
+                                                    AllTypeVariant{select_eq});
       benchmark_state.measure([&]() {
         table_scan->execute();
       });
@@ -93,15 +93,15 @@ class AbstractColumnBenchmark {
 
   const BenchmarkState benchmark_table_scan(
       const std::shared_ptr<BaseColumn>& base_column,
-      const int select_lteq,
+      const int32_t select_eq,
       const float point_access_factor) {
-    auto filtered_table = _get_filtered_table(base_column, point_access_factor);
-
     auto benchmark_state = BenchmarkState{max_num_iterations, max_duration};
 
     while (benchmark_state.keep_running()) {
-      auto table_scan = std::make_shared<TableScan>(filtered_table, ColumnID{0u}, PredicateCondition::LessThanEquals,
-                                                    AllTypeVariant{select_lteq});
+      auto filtered_table = _get_filtered_table(base_column, point_access_factor);
+
+      auto table_scan = std::make_shared<TableScan>(filtered_table, ColumnID{0u}, PredicateCondition::Equals,
+                                                    AllTypeVariant{select_eq});
 
       benchmark_state.measure([&]() {
         table_scan->execute();
