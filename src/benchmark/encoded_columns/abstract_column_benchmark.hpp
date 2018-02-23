@@ -38,8 +38,8 @@ class AbstractColumnBenchmark {
   virtual void run() = 0;
 
  protected:
-  static constexpr auto max_num_iterations = 180u;
-  static constexpr auto max_duration = std::chrono::seconds{8};
+  static constexpr auto max_num_iterations = 100u;
+  static constexpr auto max_duration = std::chrono::seconds{4};
 
  protected:
   PolymorphicAllocator<size_t> get_alloc() const;

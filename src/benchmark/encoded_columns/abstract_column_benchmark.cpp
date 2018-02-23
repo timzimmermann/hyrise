@@ -55,7 +55,7 @@ std::vector<double> AbstractColumnBenchmark::to_ms(const std::vector<Duration>& 
 }
 
 std::shared_ptr<PosList> AbstractColumnBenchmark::_generate_pos_list(ChunkOffset row_count, float point_access_factor) {
-  const auto num_positions = row_count * point_access_factor;
+  const auto num_positions = static_cast<ChunkOffset>(row_count * point_access_factor);
   auto accesses = std::vector<bool>(row_count, false);
   std::fill_n(accesses.begin(), num_positions, true);
 

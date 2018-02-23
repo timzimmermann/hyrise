@@ -10,7 +10,7 @@
 int main(int argc, char const *argv[]) {
   nlohmann::json description;
 
-  const auto calibration_type = opossum::CalibrationType::CompleteTableScan;
+  const auto calibration_type = opossum::CalibrationType::FilteredTableScan;
 
   if (argc > 1) {
     const auto file_name = argv[1];
