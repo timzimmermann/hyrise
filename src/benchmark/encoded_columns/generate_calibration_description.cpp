@@ -44,7 +44,7 @@ nlohmann::json generate_calibration_description(CalibrationType type) {
         return factors;
       }
       case CalibrationType::Materialization:
-        return std::vector<float>{0.00001f, 0.00005f, 0.0001f, 0.0005f, 0.001f};
+        return std::vector<float>{0.000005f, 0.00001f, 0.00005f, 0.0001f, 0.0005f, 0.001f};
       default:
         return std::vector<float>{};
     }
