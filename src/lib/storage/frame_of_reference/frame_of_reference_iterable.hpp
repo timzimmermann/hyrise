@@ -85,12 +85,7 @@ class FrameOfReferenceIterable : public PointAccessibleColumnIterable<FrameOfRef
     bool equal(const Iterator& other) const { return _offset_value_it == other._offset_value_it; }
 
     ColumnIteratorValue<T> dereference() const {
-      if (*_null_value_it) {
-        return ColumnIteratorValue<T>{T{}, true, _chunk_offset};
-      }
-
       const auto value = static_cast<T>(*_offset_value_it) + *_reference_frame_it;
-
       return ColumnIteratorValue<T>{value, *_null_value_it, _chunk_offset};
     }
 
