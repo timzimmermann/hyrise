@@ -118,11 +118,27 @@ class ColumnIterable {
   void materialize_nulls(Container& container) const {
     for_each([&](const auto& value) { container.push_back(value.is_null()); });
   }
+  /**@}*/
 
-  /** @} */
+  /**
+   * By default, iterables may call functors passed to with_iterators()
+   * several times with iterators to different parts of the column.
+   * Call require_single_functor_call() if your code requires a single call.
+   */
+  void require_single_functor_call() { _single_call_required = true; }
+  bool single_functor_call_required() const { return _single_call_required; }
 
  private:
   const Derived& _self() const { return static_cast<const Derived&>(*this); }
+
+ private:
+  bool _single_call_required = false;
+};
+
+struct ColumnPointAccessPlan {
+  PosListIterator begin;
+  PosListIterator end;
+  ChunkOffset begin_chunk_offset;
 };
 
 /**
@@ -142,19 +158,19 @@ class PointAccessibleColumnIterable : public ColumnIterable<Derived> {
   using ColumnIterable<Derived>::with_iterators;  // needed because of “name hiding”
 
   template <typename Functor>
-  void with_iterators(const ChunkOffsetsList* mapped_chunk_offsets, const Functor& functor) const {
-    if (mapped_chunk_offsets == nullptr) {
+  void with_iterators(std::optional<ColumnPointAccessPlan> plan, const Functor& functor) const {
+    if (!plan) {
       _self()._on_with_iterators(functor);
     } else {
-      _self()._on_with_iterators(*mapped_chunk_offsets, functor);
+      _self()._on_with_iterators(*plan, functor);
     }
   }
 
   using ColumnIterable<Derived>::for_each;  // needed because of “name hiding”
 
   template <typename Functor>
-  void for_each(const ChunkOffsetsList* mapped_chunk_offsets, const Functor& functor) const {
-    with_iterators(mapped_chunk_offsets, [&functor](auto it, auto end) {
+  void for_each(std::optional<ColumnPointAccessPlan> plan, const Functor& functor) const {
+    with_iterators(plan, [&functor](auto it, auto end) {
       for (; it != end; ++it) {
         functor(*it);
       }

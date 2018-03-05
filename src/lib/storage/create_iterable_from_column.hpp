@@ -6,6 +6,7 @@
 #include "storage/reference_column.hpp"
 #include "storage/run_length_column/run_length_column_iterable.hpp"
 #include "storage/value_column/value_column_iterable.hpp"
+#include "storage/column_iterables/any_column_iterable.hpp"
 
 namespace opossum {
 

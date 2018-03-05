@@ -55,21 +55,6 @@ class BaseSingleColumnTableScanImpl : public BaseTableScanImpl, public ColumnVis
     std::optional<ColumnPointAccessPlan> _access_plan;
   };
 
-  /**
-   * @defgroup Create attribute vector iterable from dictionary column
-   *
-   * Only needed as long as there are two dictionary column implementations
-   *
-   * @{
-   */
-
-  static AttributeVectorIterable _create_attribute_vector_iterable(const BaseDictionaryColumn& column);
-
-  static DeprecatedAttributeVectorIterable _create_attribute_vector_iterable(
-      const BaseDeprecatedDictionaryColumn& column);
-
-  /**@}*/
-
   void _visit_referenced(const ReferenceColumn& left_column, const ChunkID referenced_chunk_id, Context& context,
                          ColumnPointAccessPlan access_plan);
 };
