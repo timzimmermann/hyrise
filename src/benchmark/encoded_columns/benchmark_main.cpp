@@ -10,7 +10,7 @@
 int main(int argc, char const *argv[]) {
   nlohmann::json description;
 
-  const auto calibration_type = opossum::CalibrationType::FilteredTableScan;
+  const auto calibration_type = opossum::CalibrationType::CompleteTableScan;
 
   if (argc > 1) {
     const auto file_name = argv[1];
@@ -23,11 +23,9 @@ int main(int argc, char const *argv[]) {
     description = opossum::generate_calibration_description(calibration_type);
   }
 
-  auto benchmark = opossum::MultiDistributionColumnBenchmark{calibration_type, std::move(description)};
+  // auto benchmark = opossum::MultiDistributionColumnBenchmark{calibration_type, std::move(description)};
+  auto benchmark = opossum::SingleDistributionBenchmark{};
   benchmark.run();
-
-  // auto benchmark = opossum::SingleDistributionBenchmark{};
-  // benchmark.run();
 
   return 0;
 }

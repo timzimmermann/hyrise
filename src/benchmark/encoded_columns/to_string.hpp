@@ -13,7 +13,8 @@ inline std::string to_string(EncodingType encoding_type) {
     { EncodingType::Unencoded, "Unencoded" },
     { EncodingType::Dictionary, "Dictionary" },
     { EncodingType::DeprecatedDictionary, "Dictionary (Deprecated)" },
-    { EncodingType::RunLength, "Run Length" }};
+    { EncodingType::RunLength, "Run Length" },
+    { EncodingType::FrameOfReference, "FOR" }};
 
   return string_for_type.at(encoding_type);
 }

@@ -16,7 +16,8 @@ EncodingType from_string<EncodingType>(const std::string& str) {
     { "Unencoded", EncodingType::Unencoded },
     { "Dictionary", EncodingType::Dictionary },
     { "Dictionary (Deprecated)", EncodingType::DeprecatedDictionary },
-    { "Run Length", EncodingType::RunLength }};
+    { "Run Length", EncodingType::RunLength },
+    { "FOR", EncodingType::FrameOfReference }};
 
   return type_for_string.at(str);
 }

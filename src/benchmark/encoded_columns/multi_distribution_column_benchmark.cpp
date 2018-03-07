@@ -98,7 +98,7 @@ void MultiDistributionColumnBenchmark::run() {
     std::cout << "Iterations: " << benchmark_state.num_iterations() << std::endl;
   }
 
-  _output_as_csv(_description);
+  _output_as_json(_description);
 }
 
 void MultiDistributionColumnBenchmark::_output_as_json(nlohmann::json& data) {
