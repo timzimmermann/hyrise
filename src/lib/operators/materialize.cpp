@@ -38,8 +38,8 @@ std::shared_ptr<const Table> Materialize::_on_execute() {
 
       auto out_base_column = std::shared_ptr<BaseColumn>{};
 
-      resolve_data_type(data_type, [&](auto data_type_t) {
-        using DataT = typename decltype(data_type_t)::type;
+      resolve_data_type(data_type, [&](auto data_type_c) {
+        using DataT = typename decltype(data_type_c)::type;
 
         auto values = pmr_concurrent_vector<DataT>{};
         values.reserve(in_base_column->size());
