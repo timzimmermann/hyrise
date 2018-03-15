@@ -13,7 +13,7 @@
 #include "operators/abstract_read_only_operator.hpp"
 #include "operators/table_scan.hpp"
 #include "operators/table_wrapper.hpp"
-#include "storage/deprecated_dictionary_compression.hpp"
+#include "storage/chunk_encoder.hpp"
 #include "storage/encoding_type.hpp"
 #include "storage/reference_column.hpp"
 #include "storage/table.hpp"
@@ -32,11 +32,13 @@ class OperatorsTableScanTest : public BaseTest, public ::testing::WithParamInter
   }
 
   std::shared_ptr<TableWrapper> get_table_op_even_dict() {
-    std::shared_ptr<Table> test_even_dict = std::make_shared<Table>(5);
-    test_even_dict->add_column("a", DataType::Int);
-    test_even_dict->add_column("b", DataType::Int);
+    TableColumnDefinitions table_column_definitions;
+    table_column_definitions.emplace_back("a", DataType::Int);
+    table_column_definitions.emplace_back("b", DataType::Int);
+
+    std::shared_ptr<Table> test_even_dict = std::make_shared<Table>(table_column_definitions, TableType::Data, 5);
     for (int i = 0; i <= 24; i += 2) test_even_dict->append({i, 100 + i});
-    DeprecatedDictionaryCompression::compress_chunks(*test_even_dict, {ChunkID{0}, ChunkID{1}}, _encoding_type);
+    ChunkEncoder::encode_chunks(test_even_dict, {ChunkID{0}, ChunkID{1}}, {_encoding_type});
 
     auto table_wrapper_even_dict = std::make_shared<TableWrapper>(std::move(test_even_dict));
     table_wrapper_even_dict->execute();
@@ -51,15 +53,17 @@ class OperatorsTableScanTest : public BaseTest, public ::testing::WithParamInter
   }
 
   std::shared_ptr<TableWrapper> get_table_op_part_dict() {
-    auto table = std::make_shared<Table>(5);
-    table->add_column("a", DataType::Int);
-    table->add_column("b", DataType::Float);
+    TableColumnDefinitions table_column_definitions;
+    table_column_definitions.emplace_back("a", DataType::Int);
+    table_column_definitions.emplace_back("b", DataType::Float);
+
+    std::shared_ptr<Table> table = std::make_shared<Table>(table_column_definitions, TableType::Data, 5);
 
     for (int i = 1; i < 20; ++i) {
       table->append({i, 100.1 + i});
     }
 
-    DeprecatedDictionaryCompression::compress_chunks(*table, {ChunkID{0}, ChunkID{2}}, _encoding_type);
+    ChunkEncoder::encode_chunks(table, {ChunkID{0}, ChunkID{2}}, {_encoding_type});
 
     auto table_wrapper = std::make_shared<TableWrapper>(table);
     table_wrapper->execute();
@@ -68,9 +72,11 @@ class OperatorsTableScanTest : public BaseTest, public ::testing::WithParamInter
   }
 
   std::shared_ptr<TableWrapper> get_table_op_filtered() {
-    auto table = std::make_shared<Table>(5);
-    table->add_column_definition("a", DataType::Int);
-    table->add_column_definition("b", DataType::Float);
+    TableColumnDefinitions table_column_definitions;
+    table_column_definitions.emplace_back("a", DataType::Int);
+    table_column_definitions.emplace_back("b", DataType::Float);
+
+    std::shared_ptr<Table> table = std::make_shared<Table>(table_column_definitions, TableType::References, 5);
 
     const auto test_table_part_dict = get_table_op_part_dict()->get_output();
 
@@ -89,11 +95,9 @@ class OperatorsTableScanTest : public BaseTest, public ::testing::WithParamInter
     auto col_a = std::make_shared<ReferenceColumn>(test_table_part_dict, ColumnID{0}, pos_list);
     auto col_b = std::make_shared<ReferenceColumn>(test_table_part_dict, ColumnID{1}, pos_list);
 
-    auto chunk = std::make_shared<Chunk>();
-    chunk->add_column(col_a);
-    chunk->add_column(col_b);
+    ChunkColumns columns({col_a, col_b});
 
-    table->emplace_chunk(std::move(chunk));
+    table->append_chunk(columns);
     auto table_wrapper = std::make_shared<TableWrapper>(std::move(table));
     table_wrapper->execute();
     return table_wrapper;
@@ -101,15 +105,17 @@ class OperatorsTableScanTest : public BaseTest, public ::testing::WithParamInter
 
   std::shared_ptr<TableWrapper> get_table_op_with_n_dict_entries(const int num_entries) {
     // Set up dictionary encoded table with a dictionary consisting of num_entries entries.
-    auto table = std::make_shared<opossum::Table>();
-    table->add_column("a", DataType::Int);
-    table->add_column("b", DataType::Float);
+    TableColumnDefinitions table_column_definitions;
+    table_column_definitions.emplace_back("a", DataType::Int);
+    table_column_definitions.emplace_back("b", DataType::Float);
+
+    std::shared_ptr<Table> table = std::make_shared<Table>(table_column_definitions, TableType::Data);
 
     for (int i = 0; i <= num_entries; i++) {
       table->append({i, 100.0f + i});
     }
 
-    DeprecatedDictionaryCompression::compress_chunks(*table, {ChunkID{0}}, _encoding_type);
+    ChunkEncoder::encode_chunks(table, {ChunkID{0}}, {_encoding_type});
 
     auto table_wrapper = std::make_shared<opossum::TableWrapper>(std::move(table));
     table_wrapper->execute();
@@ -117,8 +123,6 @@ class OperatorsTableScanTest : public BaseTest, public ::testing::WithParamInter
   }
 
   std::shared_ptr<const Table> to_referencing_table(const std::shared_ptr<const Table>& table) {
-    auto table_out = std::make_shared<Table>();
-
     auto pos_list = std::make_shared<PosList>();
     pos_list->reserve(table->row_count());
 
@@ -130,16 +134,20 @@ class OperatorsTableScanTest : public BaseTest, public ::testing::WithParamInter
       }
     }
 
-    auto chunk_out = std::make_shared<Chunk>();
+    ChunkColumns columns;
+    TableColumnDefinitions column_definitions;
 
     for (auto column_id = ColumnID{0u}; column_id < table->column_count(); ++column_id) {
-      table_out->add_column_definition(table->column_name(column_id), table->column_type(column_id));
+      column_definitions.emplace_back(table->column_name(column_id), table->column_data_type(column_id));
 
       auto column_out = std::make_shared<ReferenceColumn>(table, column_id, pos_list);
-      chunk_out->add_column(column_out);
+      columns.push_back(column_out);
     }
 
-    table_out->emplace_chunk(std::move(chunk_out));
+    auto table_out = std::make_shared<Table>(column_definitions, TableType::References);
+
+    table_out->append_chunk(columns);
+
     return table_out;
   }
 
@@ -147,7 +155,7 @@ class OperatorsTableScanTest : public BaseTest, public ::testing::WithParamInter
     const auto table = load_table("src/test/tables/int_float_w_null_8_rows.tbl", 4);
 
     if (references_dict_column) {
-      DeprecatedDictionaryCompression::compress_table(*table, _encoding_type);
+      ChunkEncoder::encode_all_chunks(table, {_encoding_type});
     }
 
     auto pos_list_a = std::make_shared<PosList>(
@@ -158,15 +166,14 @@ class OperatorsTableScanTest : public BaseTest, public ::testing::WithParamInter
         PosList{NULL_ROW_ID, RowID{ChunkID{0u}, 0u}, RowID{ChunkID{1u}, 2u}, RowID{ChunkID{0u}, 1u}});
     auto ref_column_b = std::make_shared<ReferenceColumn>(table, ColumnID{1u}, pos_list_b);
 
-    auto ref_table = std::make_shared<Table>();
-    ref_table->add_column_definition("a", DataType::Int, true);
-    ref_table->add_column_definition("b", DataType::Float, true);
+    TableColumnDefinitions column_definitions;
+    column_definitions.emplace_back("a", DataType::Int, true);
+    column_definitions.emplace_back("b", DataType::Float, true);
+    auto ref_table = std::make_shared<Table>(column_definitions, TableType::References);
 
-    auto chunk = std::make_shared<Chunk>();
-    chunk->add_column(ref_column_a);
-    chunk->add_column(ref_column_b);
+    ChunkColumns columns({ref_column_a, ref_column_b});
 
-    ref_table->emplace_chunk(std::move(chunk));
+    ref_table->append_chunk(columns);
 
     return ref_table;
   }
@@ -219,8 +226,8 @@ auto formatter = [](const ::testing::TestParamInfo<EncodingType> info) {
 };
 
 // As long as two implementation of dictionary encoding exist, this ensure to run the tests for both.
-INSTANTIATE_TEST_CASE_P(DictionaryEncodingTypes, OperatorsTableScanTest,
-                        ::testing::Values(EncodingType::DeprecatedDictionary, EncodingType::Dictionary), formatter);
+INSTANTIATE_TEST_CASE_P(DictionaryEncodingTypes, OperatorsTableScanTest, ::testing::Values(EncodingType::Dictionary),
+                        formatter);
 
 TEST_P(OperatorsTableScanTest, DoubleScan) {
   std::shared_ptr<Table> expected_result = load_table("src/test/tables/int_float_filtered.tbl", 2);
@@ -400,7 +407,7 @@ TEST_P(OperatorsTableScanTest, ScanOnReferencedIntValueColumnWithFloatColumnWith
 
 TEST_P(OperatorsTableScanTest, ScanOnIntDictColumnWithFloatColumnWithNullValues) {
   auto table = load_table("src/test/tables/int_float_w_null_8_rows.tbl", 4);
-  DeprecatedDictionaryCompression::compress_table(*table, _encoding_type);
+  ChunkEncoder::encode_all_chunks(table, {_encoding_type});
 
   auto table_wrapper = std::make_shared<TableWrapper>(std::move(table));
   table_wrapper->execute();
@@ -415,7 +422,7 @@ TEST_P(OperatorsTableScanTest, ScanOnIntDictColumnWithFloatColumnWithNullValues)
 
 TEST_P(OperatorsTableScanTest, ScanOnReferencedIntDictColumnWithFloatColumnWithNullValues) {
   auto table = load_table("src/test/tables/int_float_w_null_8_rows.tbl", 4);
-  DeprecatedDictionaryCompression::compress_table(*table, _encoding_type);
+  ChunkEncoder::encode_all_chunks(table, {_encoding_type});
 
   auto table_wrapper = std::make_shared<TableWrapper>(to_referencing_table(table));
   table_wrapper->execute();
@@ -500,7 +507,7 @@ TEST_P(OperatorsTableScanTest, ScanForNullValuesOnValueColumn) {
 
 TEST_P(OperatorsTableScanTest, ScanForNullValuesOnDictColumn) {
   auto table = load_table("src/test/tables/int_float_w_null_8_rows.tbl", 4);
-  DeprecatedDictionaryCompression::compress_table(*table, _encoding_type);
+  ChunkEncoder::encode_all_chunks(table, {_encoding_type});
 
   auto table_wrapper = std::make_shared<TableWrapper>(table);
   table_wrapper->execute();
@@ -551,7 +558,7 @@ TEST_P(OperatorsTableScanTest, ScanForNullValuesOnReferencedValueColumn) {
 
 TEST_P(OperatorsTableScanTest, ScanForNullValuesOnReferencedDictColumn) {
   auto table = load_table("src/test/tables/int_float_w_null_8_rows.tbl", 4);
-  DeprecatedDictionaryCompression::compress_table(*table, _encoding_type);
+  ChunkEncoder::encode_all_chunks(table, {_encoding_type});
 
   auto table_wrapper = std::make_shared<TableWrapper>(to_referencing_table(table));
   table_wrapper->execute();

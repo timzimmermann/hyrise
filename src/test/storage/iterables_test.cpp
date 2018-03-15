@@ -8,10 +8,8 @@
 #include "base_test.hpp"
 #include "gtest/gtest.h"
 
+#include "storage/chunk_encoder.hpp"
 #include "storage/column_iterables/constant_value_iterable.hpp"
-#include "storage/deprecated_dictionary_column.hpp"
-#include "storage/deprecated_dictionary_column/deprecated_dictionary_column_iterable.hpp"
-#include "storage/deprecated_dictionary_compression.hpp"
 #include "storage/dictionary_column.hpp"
 #include "storage/dictionary_column/dictionary_column_iterable.hpp"
 #include "storage/reference_column/reference_column_iterable.hpp"
@@ -78,14 +76,12 @@ TEST_F(IterablesTest, ValueColumnReferencedIteratorWithIterators) {
   auto column = chunk->get_column(ColumnID{0u});
   auto int_column = std::dynamic_pointer_cast<const ValueColumn<int>>(column);
 
-  const auto chunk_id = ChunkID{0u};
-  auto pos_list = PosList{{chunk_id, 0u}, {chunk_id, 2u}, {chunk_id, 3u}};
-  auto access_plan = ColumnPointAccessPlan{pos_list.cbegin(), pos_list.cend(), ChunkOffset{0u}};
+  auto chunk_offsets = std::vector<ChunkOffsetMapping>{{0u, 0u}, {1u, 2u}, {2u, 3u}};
 
   auto iterable = ValueColumnIterable<int>{*int_column};
 
   auto sum = uint32_t{0};
-  iterable.with_iterators(access_plan, SumUpWithIt{sum});
+  iterable.with_iterators(&chunk_offsets, SumUpWithIt{sum});
 
   EXPECT_EQ(sum, 12'480u);
 }
@@ -110,56 +106,18 @@ TEST_F(IterablesTest, ValueColumnNullableReferencedIteratorWithIterators) {
   auto column = chunk->get_column(ColumnID{0u});
   auto int_column = std::dynamic_pointer_cast<const ValueColumn<int>>(column);
 
-  const auto chunk_id = ChunkID{0u};
-  auto pos_list = PosList{{chunk_id, 0u}, {chunk_id, 2u}, {chunk_id, 3u}};
-  auto access_plan = ColumnPointAccessPlan{pos_list.cbegin(), pos_list.cend(), ChunkOffset{0u}};
+  auto chunk_offsets = std::vector<ChunkOffsetMapping>{{0u, 0u}, {1u, 2u}, {2u, 3u}};
 
   auto iterable = ValueColumnIterable<int>{*int_column};
 
   auto sum = uint32_t{0};
-  iterable.with_iterators(access_plan, SumUpWithIt{sum});
+  iterable.with_iterators(&chunk_offsets, SumUpWithIt{sum});
 
   EXPECT_EQ(sum, 13'579u);
 }
 
-TEST_F(IterablesTest, DeprecatedDictionaryColumnIteratorWithIterators) {
-  DeprecatedDictionaryCompression::compress_table(*table);
-
-  auto chunk = table->get_chunk(ChunkID{0u});
-
-  auto column = chunk->get_column(ColumnID{0u});
-  auto dict_column = std::dynamic_pointer_cast<const DeprecatedDictionaryColumn<int>>(column);
-
-  auto iterable = DeprecatedDictionaryColumnIterable<int>{*dict_column};
-
-  auto sum = uint32_t{0};
-  iterable.with_iterators(SumUpWithIt{sum});
-
-  EXPECT_EQ(sum, 24'825u);
-}
-
-TEST_F(IterablesTest, DeprecatedDictionaryColumnReferencedIteratorWithIterators) {
-  DeprecatedDictionaryCompression::compress_table(*table);
-
-  auto chunk = table->get_chunk(ChunkID{0u});
-
-  auto column = chunk->get_column(ColumnID{0u});
-  auto dict_column = std::dynamic_pointer_cast<const DeprecatedDictionaryColumn<int>>(column);
-
-  const auto chunk_id = ChunkID{0u};
-  auto pos_list = PosList{{chunk_id, 0u}, {chunk_id, 2u}, {chunk_id, 3u}};
-  auto access_plan = ColumnPointAccessPlan{pos_list.cbegin(), pos_list.cend(), ChunkOffset{0u}};
-
-  auto iterable = DeprecatedDictionaryColumnIterable<int>{*dict_column};
-
-  auto sum = uint32_t{0};
-  iterable.with_iterators(access_plan, SumUpWithIt{sum});
-
-  EXPECT_EQ(sum, 12'480u);
-}
-
 TEST_F(IterablesTest, DictionaryColumnIteratorWithIterators) {
-  DeprecatedDictionaryCompression::compress_table(*table, EncodingType::Dictionary);
+  ChunkEncoder::encode_all_chunks(table, EncodingType::Dictionary);
 
   auto chunk = table->get_chunk(ChunkID{0u});
 
@@ -175,21 +133,19 @@ TEST_F(IterablesTest, DictionaryColumnIteratorWithIterators) {
 }
 
 TEST_F(IterablesTest, DictionaryColumnReferencedIteratorWithIterators) {
-  DeprecatedDictionaryCompression::compress_table(*table, EncodingType::Dictionary);
+  ChunkEncoder::encode_all_chunks(table, EncodingType::Dictionary);
 
   auto chunk = table->get_chunk(ChunkID{0u});
 
   auto column = chunk->get_column(ColumnID{0u});
   auto dict_column = std::dynamic_pointer_cast<const DictionaryColumn<int>>(column);
 
-  const auto chunk_id = ChunkID{0u};
-  auto pos_list = PosList{{chunk_id, 0u}, {chunk_id, 2u}, {chunk_id, 3u}};
-  auto access_plan = ColumnPointAccessPlan{pos_list.cbegin(), pos_list.cend(), ChunkOffset{0u}};
+  auto chunk_offsets = std::vector<ChunkOffsetMapping>{{0u, 0u}, {1u, 2u}, {2u, 3u}};
 
   auto iterable = DictionaryColumnIterable<int>{*dict_column};
 
   auto sum = uint32_t{0};
-  iterable.with_iterators(access_plan, SumUpWithIt{sum});
+  iterable.with_iterators(&chunk_offsets, SumUpWithIt{sum});
 
   EXPECT_EQ(sum, 12'480u);
 }

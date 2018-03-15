@@ -9,6 +9,14 @@
 namespace opossum {
 
 /**
+ * @brief template-free base class of all iterators used by iterables
+ *
+ * The class allows the JitOperator to keep pointers to differently specialized versions
+ * of the iterators in a common data structure.
+ */
+class JitBaseColumnIterator {};
+
+/**
  * @brief base class of all iterators used by iterables
  *
  * Instantiations of this template are part of the column iterable
@@ -38,7 +46,8 @@ namespace opossum {
  * };
  */
 template <typename Derived, typename Value>
-using BaseColumnIterator = boost::iterator_facade<Derived, Value, boost::forward_traversal_tag, Value>;
+class BaseColumnIterator : public boost::iterator_facade<Derived, Value, boost::forward_traversal_tag, Value>,
+                           public JitBaseColumnIterator {};
 
 /**
  * @brief base class of all point-access iterators used by iterables
@@ -59,32 +68,32 @@ using BaseColumnIterator = boost::iterator_facade<Derived, Value, boost::forward
  *  private:
  *   friend class boost::iterator_core_access;  // the following methods need to be accessible by the base class
  *
- *   // don’t forget to check if chunk_offsets().index_into_referenced == INVALID_CHUNK_OFFSET (i.e. NULL)
  *   Value dereference() const { return Value{}; }
  * };
  */
 template <typename Derived, typename Value>
 class BasePointAccessColumnIterator : public BaseColumnIterator<Derived, Value> {
  public:
-  explicit BasePointAccessColumnIterator(PosListIterator pos_list_it, ChunkOffset chunk_offset)
-      : _pos_list_it{std::move(pos_list_it)}, _chunk_offset{std::move(chunk_offset)} {}
+  explicit BasePointAccessColumnIterator(const ChunkOffsetsIterator& chunk_offsets_it)
+      : _chunk_offsets_it{chunk_offsets_it} {}
 
  protected:
-  ChunkOffsetMapping chunk_offsets() const { return {_chunk_offset, _pos_list_it->chunk_offset}; }
+  const ChunkOffsetMapping& chunk_offsets() const {
+    DebugAssert(_chunk_offsets_it->into_referenced != INVALID_CHUNK_OFFSET,
+                "Invalid ChunkOffset, calling code should handle null values");
+    return *_chunk_offsets_it;
+  }
 
  private:
   friend class boost::iterator_core_access;  // grants the boost::iterator_facade access to the private interface
 
-  void increment() {
-    ++_pos_list_it;
-    ++_chunk_offset;
+  void increment() { ++_chunk_offsets_it; }
+  bool equal(const BasePointAccessColumnIterator& other) const {
+    return (_chunk_offsets_it == other._chunk_offsets_it);
   }
 
-  bool equal(const BasePointAccessColumnIterator& other) const { return (_pos_list_it == other._pos_list_it); }
-
  private:
-  PosListIterator _pos_list_it;
-  ChunkOffset _chunk_offset;
+  ChunkOffsetsIterator _chunk_offsets_it;
 };
 
 }  // namespace opossum

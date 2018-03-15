@@ -1,7 +1,5 @@
 #pragma once
 
-#include <array>
-#include <optional>
 #include <type_traits>
 
 #include "storage/column_iterables/base_column_iterators.hpp"
@@ -83,24 +81,48 @@ class ColumnIterable {
   }
 
   /**
-   * By default, iterables may call functors passed to with_iterators()
-   * several times with iterators to different parts of the column.
-   * Call require_single_functor_call() if your code requires a single call.
+   * @defgroup Functions for the materialization of values and nulls.
+   * The following implementations may be overridden by derived classes.
+   * @{
    */
-  void require_single_functor_call() { _single_call_required = true; }
-  bool single_functor_call_required() const { return _single_call_required; }
+
+  /**
+   * Materialize all values in this iterable.
+   * @param container   Container with the same value_type as the values in the column
+   */
+  template <typename Container>
+  void materialize_values(Container& container) const {
+    for_each([&](const auto& value) {
+      DebugAssert(!value.is_null(), "NULL value in materialize_values(), call materialize_values_and_nulls() instead");
+      container.push_back(value.value());
+    });
+  }
+
+  /**
+   * Materialize all values in this iterable as std::optional<ValueType>. std::nullopt if value is NULL.
+   * @param container   Container with value_type std::pair<bool, T>, where
+   *                        bool indicates whether the value is NULL or not
+   *                        T is the same as the type of the values in the column
+   *                        pair in favour over optional to avoid branches for initialization
+   */
+  template <typename Container>
+  void materialize_values_and_nulls(Container& container) const {
+    for_each([&](const auto& value) { container.push_back(std::make_pair(value.is_null(), value.value())); });
+  }
+
+  /**
+   * Materialize all null values in this Iterable.
+   * @param container   The container with value_type bool storing the information whether a value is NULL or not
+   */
+  template <typename Container>
+  void materialize_nulls(Container& container) const {
+    for_each([&](const auto& value) { container.push_back(value.is_null()); });
+  }
+
+  /** @} */
 
  private:
   const Derived& _self() const { return static_cast<const Derived&>(*this); }
-
- private:
-  bool _single_call_required = false;
-};
-
-struct ColumnPointAccessPlan {
-  PosListIterator begin;
-  PosListIterator end;
-  ChunkOffset begin_chunk_offset;
 };
 
 /**
@@ -120,19 +142,19 @@ class PointAccessibleColumnIterable : public ColumnIterable<Derived> {
   using ColumnIterable<Derived>::with_iterators;  // needed because of “name hiding”
 
   template <typename Functor>
-  void with_iterators(std::optional<ColumnPointAccessPlan> plan, const Functor& functor) const {
-    if (!plan) {
+  void with_iterators(const ChunkOffsetsList* mapped_chunk_offsets, const Functor& functor) const {
+    if (mapped_chunk_offsets == nullptr) {
       _self()._on_with_iterators(functor);
     } else {
-      _self()._on_with_iterators(*plan, functor);
+      _self()._on_with_iterators(*mapped_chunk_offsets, functor);
     }
   }
 
   using ColumnIterable<Derived>::for_each;  // needed because of “name hiding”
 
   template <typename Functor>
-  void for_each(std::optional<ColumnPointAccessPlan> plan, const Functor& functor) const {
-    with_iterators(plan, [&functor](auto it, auto end) {
+  void for_each(const ChunkOffsetsList* mapped_chunk_offsets, const Functor& functor) const {
+    with_iterators(mapped_chunk_offsets, [&functor](auto it, auto end) {
       for (; it != end; ++it) {
         functor(*it);
       }

@@ -1,13 +1,11 @@
 #pragma once
 
 #include <memory>
-#include <optional>
 #include <unordered_map>
 #include <utility>
 
 #include "base_table_scan_impl.hpp"
 
-#include "storage/column_iterables.hpp"
 #include "storage/column_iterables/chunk_offset_mapping.hpp"
 #include "storage/column_visitable.hpp"
 
@@ -18,7 +16,6 @@ namespace opossum {
 class Table;
 class ReferenceColumn;
 class AttributeVectorIterable;
-class DeprecatedAttributeVectorIterable;
 
 /**
  * @brief The base class of table scan impls that scan a single column
@@ -40,38 +37,16 @@ class BaseSingleColumnTableScanImpl : public BaseTableScanImpl, public ColumnVis
    * @brief the context used for the columns’ visitor pattern
    */
   struct Context : public ColumnVisitableContext {
-    Context(const ChunkID chunk_id, PosList& matches_out, std::optional<ColumnPointAccessPlan> access_plan)
-        : _chunk_id{chunk_id}, _matches_out{matches_out}, _access_plan{std::move(access_plan)} {}
+    Context(const ChunkID chunk_id, PosList& matches_out) : _chunk_id{chunk_id}, _matches_out{matches_out} {}
 
-    Context(const ChunkID chunk_id, PosList& matches_out) : Context{chunk_id, matches_out, std::nullopt} {}
-
-    // Copy everything from other except mapped_chunk_offsets
-    Context(Context& other, const ColumnPointAccessPlan& access_plan)
-        : Context{other._chunk_id, other._matches_out, std::move(access_plan)} {}
+    Context(const ChunkID chunk_id, PosList& matches_out, std::unique_ptr<ChunkOffsetsList> mapped_chunk_offsets)
+        : _chunk_id{chunk_id}, _matches_out{matches_out}, _mapped_chunk_offsets{std::move(mapped_chunk_offsets)} {}
 
     const ChunkID _chunk_id;
     PosList& _matches_out;
 
-    std::optional<ColumnPointAccessPlan> _access_plan;
+    std::unique_ptr<ChunkOffsetsList> _mapped_chunk_offsets;
   };
-
-  /**
-   * @defgroup Create attribute vector iterable from dictionary column
-   *
-   * Only needed as long as there are two dictionary column implementations
-   *
-   * @{
-   */
-
-  static AttributeVectorIterable _create_attribute_vector_iterable(const BaseDictionaryColumn& column);
-
-  static DeprecatedAttributeVectorIterable _create_attribute_vector_iterable(
-      const BaseDeprecatedDictionaryColumn& column);
-
-  /**@}*/
-
-  void _visit_referenced(const ReferenceColumn& left_column, const ChunkID referenced_chunk_id, Context& context,
-                         ColumnPointAccessPlan access_plan);
 };
 
 }  // namespace opossum

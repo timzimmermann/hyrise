@@ -16,7 +16,6 @@
 #include "scheduler/node_queue_scheduler.hpp"
 #include "scheduler/topology.hpp"
 #include "sql/sql_pipeline.hpp"
-#include "sql/sql_query_operator.hpp"
 #include "storage/storage_manager.hpp"
 
 namespace {
@@ -49,10 +48,11 @@ class SQLPipelineTest : public BaseTest {
     _table_b = load_table("src/test/tables/int_float2.tbl", 2);
     StorageManager::get().add_table("table_b", _table_b);
 
-    _join_result = std::make_shared<Table>();
-    _join_result->add_column("a", DataType::Int);
-    _join_result->add_column("b", DataType::Float);
-    _join_result->add_column("bb", DataType::Float);
+    TableColumnDefinitions column_definitions;
+    column_definitions.emplace_back("a", DataType::Int);
+    column_definitions.emplace_back("b", DataType::Float);
+    column_definitions.emplace_back("bb", DataType::Float);
+    _join_result = std::make_shared<Table>(column_definitions, TableType::Data);
     _join_result->append({12345, 458.7f, 456.7f});
     _join_result->append({12345, 458.7f, 457.7f});
 
@@ -80,14 +80,14 @@ TEST_F(SQLPipelineTest, SimpleCreation) {
   SQLPipeline sql_pipeline{_select_query_a};
 
   EXPECT_EQ(sql_pipeline.transaction_context(), nullptr);
-  EXPECT_EQ(sql_pipeline.num_statements(), 1u);
+  EXPECT_EQ(sql_pipeline.statement_count(), 1u);
 }
 
 TEST_F(SQLPipelineTest, SimpleCreationWithoutMVCC) {
-  SQLPipeline sql_pipeline{_select_query_a, false};
+  SQLPipeline sql_pipeline{_select_query_a, UseMvcc::No};
 
   EXPECT_EQ(sql_pipeline.transaction_context(), nullptr);
-  EXPECT_EQ(sql_pipeline.num_statements(), 1u);
+  EXPECT_EQ(sql_pipeline.statement_count(), 1u);
 }
 
 TEST_F(SQLPipelineTest, SimpleCreationWithCustomTransactionContext) {
@@ -95,21 +95,21 @@ TEST_F(SQLPipelineTest, SimpleCreationWithCustomTransactionContext) {
   SQLPipeline sql_pipeline{_select_query_a, context};
 
   EXPECT_EQ(sql_pipeline.transaction_context().get(), context.get());
-  EXPECT_EQ(sql_pipeline.num_statements(), 1u);
+  EXPECT_EQ(sql_pipeline.statement_count(), 1u);
 }
 
 TEST_F(SQLPipelineTest, SimpleCreationMulti) {
   SQLPipeline sql_pipeline{_multi_statement_query};
 
   EXPECT_EQ(sql_pipeline.transaction_context(), nullptr);
-  EXPECT_EQ(sql_pipeline.num_statements(), 2u);
+  EXPECT_EQ(sql_pipeline.statement_count(), 2u);
 }
 
 TEST_F(SQLPipelineTest, SimpleCreationWithoutMVCCMulti) {
-  SQLPipeline sql_pipeline{_multi_statement_query, false};
+  SQLPipeline sql_pipeline{_multi_statement_query, UseMvcc::No};
 
   EXPECT_EQ(sql_pipeline.transaction_context(), nullptr);
-  EXPECT_EQ(sql_pipeline.num_statements(), 2u);
+  EXPECT_EQ(sql_pipeline.statement_count(), 2u);
 }
 
 TEST_F(SQLPipelineTest, SimpleCreationWithCustomTransactionContextMulti) {
@@ -117,11 +117,28 @@ TEST_F(SQLPipelineTest, SimpleCreationWithCustomTransactionContextMulti) {
   SQLPipeline sql_pipeline{_multi_statement_query, context};
 
   EXPECT_EQ(sql_pipeline.transaction_context().get(), context.get());
-  EXPECT_EQ(sql_pipeline.num_statements(), 2u);
+  EXPECT_EQ(sql_pipeline.statement_count(), 2u);
 }
 
 TEST_F(SQLPipelineTest, SimpleCreationInvalid) {
   EXPECT_THROW(SQLPipeline sql_pipeline{_multi_statement_invalid}, std::exception);
+}
+
+TEST_F(SQLPipelineTest, ConstructorCombinations) {
+  // Simple sanity test for all other constructor options
+  const auto optimizer = Optimizer::create_default_optimizer();
+  auto prepared_cache = std::make_shared<SQLQueryCache<SQLQueryPlan>>(5);
+  auto transaction_context = TransactionManager::get().new_transaction_context();
+
+  // No transaction context
+  EXPECT_NO_THROW(SQLPipeline(_select_query_a, optimizer, UseMvcc::Yes));
+  EXPECT_NO_THROW(SQLPipeline(_select_query_a, prepared_cache, UseMvcc::No));
+  EXPECT_NO_THROW(SQLPipeline(_select_query_a, optimizer, prepared_cache, UseMvcc::Yes));
+
+  // With transaction context
+  EXPECT_NO_THROW(SQLPipeline(_select_query_a, optimizer, transaction_context));
+  EXPECT_NO_THROW(SQLPipeline(_select_query_a, prepared_cache, transaction_context));
+  EXPECT_NO_THROW(SQLPipeline(_select_query_a, optimizer, prepared_cache, transaction_context));
 }
 
 TEST_F(SQLPipelineTest, GetParsedSQLStatements) {
@@ -351,7 +368,7 @@ TEST_F(SQLPipelineTest, GetResultTableBadQuery) {
 }
 
 TEST_F(SQLPipelineTest, GetResultTableNoOutput) {
-  const auto sql = "UPDATE table_a SET a = 1 WHERE a < 5";
+  const auto sql = "UPDATE table_a SET a = 1 WHERE a < 150";
   SQLPipeline sql_pipeline{sql};
 
   const auto& table = sql_pipeline.get_result_table();
