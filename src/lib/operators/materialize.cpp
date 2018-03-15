@@ -31,20 +31,24 @@ std::shared_ptr<const Table> Materialize::_on_execute() {
       const auto in_base_column = in_chunk->get_column(column_id);
       const auto data_type = in_table->column_type(column_id);
 
+      if (std::dynamic_pointer_cast<BaseValueColumn>(in_base_column) != nullptr) {
+        out_chunk->add_column(in_base_column);
+        continue;
+      }
+
       auto out_base_column = std::shared_ptr<BaseColumn>{};
 
       resolve_data_type(data_type, [&](auto data_type_t) {
-        using DataTypeT = typename decltype(data_type_t)::type;
+        using DataT = typename decltype(data_type_t)::type;
 
-        auto values = pmr_concurrent_vector<DataTypeT>{};
+        auto values = pmr_concurrent_vector<DataT>{};
         values.reserve(in_base_column->size());
 
         auto null_values = pmr_concurrent_vector<bool>{};
         null_values.reserve(in_base_column->size());
 
-        resolve_column_type<DataTypeT>(*in_base_column, [&](const auto& in_column) {
-          auto iterable = create_iterable_from_column<DataTypeT>(in_column);
-          // iterable.set_allow_reordering(true);
+        resolve_column_type<DataT>(*in_base_column, [&](const auto& in_column) {
+          auto iterable = create_iterable_from_column<DataT>(in_column);
 
           iterable.for_each([&](const auto& value) {
             values.push_back(value.value());
@@ -52,7 +56,7 @@ std::shared_ptr<const Table> Materialize::_on_execute() {
           });
         });
 
-        out_base_column = std::make_shared<ValueColumn<DataTypeT>>(std::move(values), std::move(null_values));
+        out_base_column = std::make_shared<ValueColumn<DataT>>(std::move(values), std::move(null_values));
       });
 
       out_chunk->add_column(out_base_column);
@@ -63,6 +67,5 @@ std::shared_ptr<const Table> Materialize::_on_execute() {
 
   return out_table;
 }
-
 
 }  // namespace opossum

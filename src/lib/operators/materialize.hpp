@@ -8,6 +8,11 @@
 
 namespace opossum {
 
+/**
+ * @brief Materializes a table
+ *
+ * Forwards value columns. Turns all other columns into value columns.
+ */
 class Materialize : public AbstractReadOnlyOperator {
  public:
   Materialize(const std::shared_ptr<const AbstractOperator> in);
