@@ -13,10 +13,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-// clang-format off
-
-#include "../llvm_extensions.hpp"
-
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/ConstantFolding.h"
@@ -276,17 +272,14 @@ namespace {
     bool ModuleLevelChanges;
     const char *NameSuffix;
     ClonedCodeInfo *CodeInfo;
-    opossum::SpecializationContext& Context;
 
   public:
     PruningFunctionCloner(Function *newFunc, const Function *oldFunc,
                           ValueToValueMapTy &valueMap, bool moduleLevelChanges,
-                          const char *nameSuffix, ClonedCodeInfo *codeInfo,
-                          opossum::SpecializationContext& context)
+                          const char *nameSuffix, ClonedCodeInfo *codeInfo)
         : NewFunc(newFunc), OldFunc(oldFunc), VMap(valueMap),
           ModuleLevelChanges(moduleLevelChanges), NameSuffix(nameSuffix),
-          CodeInfo(codeInfo),
-          Context(context) {}
+          CodeInfo(codeInfo) {}
 
     /// The specified block is found to be reachable, clone it and
     /// anything that it can reach.
@@ -392,10 +385,6 @@ void PruningFunctionCloner::CloneBlock(const BasicBlock *BB,
         Cond = dyn_cast_or_null<ConstantInt>(V);
       }
 
-      if (!Cond) {
-        Cond = dyn_cast_or_null<ConstantInt>(opossum::ResolveCondition(BI->getCondition(), Context));
-      }
-
       // Constant fold to uncond branch!
       if (Cond) {
         BasicBlock *Dest = BI->getSuccessor(!Cond->getZExtValue());
@@ -417,10 +406,6 @@ void PruningFunctionCloner::CloneBlock(const BasicBlock *BB,
       VMap[OldTI] = BranchInst::Create(Dest, NewBB);
       ToClone.push_back(Dest);
       TerminatorDone = true;
-    }
-
-    if (!Cond) {
-      Cond = dyn_cast_or_null<ConstantInt>(opossum::ResolveCondition(SI->getCondition(), Context));
     }
   }
   
@@ -453,14 +438,13 @@ void PruningFunctionCloner::CloneBlock(const BasicBlock *BB,
 /// This works like CloneAndPruneFunctionInto, except that it does not clone the
 /// entire function. Instead it starts at an instruction provided by the caller
 /// and copies (and prunes) only the code reachable from that instruction.
-void opossum::CloneAndPruneIntoFromInst(Function *NewFunc, const Function *OldFunc,
+void llvm::CloneAndPruneIntoFromInst(Function *NewFunc, const Function *OldFunc,
                                      const Instruction *StartingInst,
                                      ValueToValueMapTy &VMap,
                                      bool ModuleLevelChanges,
                                      SmallVectorImpl<ReturnInst *> &Returns,
                                      const char *NameSuffix,
-                                     ClonedCodeInfo *CodeInfo,
-                                     opossum::SpecializationContext& Context) {
+                                     ClonedCodeInfo *CodeInfo) {
   assert(NameSuffix && "NameSuffix cannot be null!");
 
   ValueMapTypeRemapper *TypeMapper = nullptr;
@@ -475,7 +459,7 @@ void opossum::CloneAndPruneIntoFromInst(Function *NewFunc, const Function *OldFu
 #endif
 
   PruningFunctionCloner PFC(NewFunc, OldFunc, VMap, ModuleLevelChanges,
-                            NameSuffix, CodeInfo, Context);
+                            NameSuffix, CodeInfo);
   const BasicBlock *StartingBB;
   if (StartingInst)
     StartingBB = StartingInst->getParent();
@@ -509,17 +493,13 @@ void opossum::CloneAndPruneIntoFromInst(Function *NewFunc, const Function *OldFu
 
     // Handle PHI nodes specially, as we have to remove references to dead
     // blocks.
-    for (BasicBlock::const_iterator I = BI.begin(), E = BI.end(); I != E; ++I) {
+    for (const PHINode &PN : BI.phis()) {
       // PHI nodes may have been remapped to non-PHI nodes by the caller or
       // during the cloning process.
-      if (const PHINode *PN = dyn_cast<PHINode>(I)) {
-        if (isa<PHINode>(VMap[PN]))
-          PHIToResolve.push_back(PN);
-        else
-          break;
-      } else {
+      if (isa<PHINode>(VMap[&PN]))
+        PHIToResolve.push_back(&PN);
+      else
         break;
-      }
     }
 
     // Finally, remap the terminator instructions, as those can't be remapped
@@ -727,16 +707,15 @@ void opossum::CloneAndPruneIntoFromInst(Function *NewFunc, const Function *OldFu
 /// constant arguments cause a significant amount of code in the callee to be
 /// dead.  Since this doesn't produce an exact copy of the input, it can't be
 /// used for things like CloneFunction or CloneModule.
-void opossum::CloneAndPruneFunctionInto(Function *NewFunc, const Function *OldFunc,
+void llvm::CloneAndPruneFunctionInto(Function *NewFunc, const Function *OldFunc,
                                      ValueToValueMapTy &VMap,
                                      bool ModuleLevelChanges,
                                      SmallVectorImpl<ReturnInst*> &Returns,
-                                     const char *NameSuffix,
+                                     const char *NameSuffix, 
                                      ClonedCodeInfo *CodeInfo,
-                                     Instruction *TheCall,
-                                     opossum::SpecializationContext& Context) {
-  opossum::CloneAndPruneIntoFromInst(NewFunc, OldFunc, &OldFunc->front().front(), VMap,
-                            ModuleLevelChanges, Returns, NameSuffix, CodeInfo, Context);
+                                     Instruction *TheCall) {
+  CloneAndPruneIntoFromInst(NewFunc, OldFunc, &OldFunc->front().front(), VMap,
+                            ModuleLevelChanges, Returns, NameSuffix, CodeInfo);
 }
 
 /// \brief Remaps instructions in \p Blocks using the mapping in \p VMap.
@@ -764,7 +743,7 @@ Loop *llvm::cloneLoopWithPreheader(BasicBlock *Before, BasicBlock *LoopDomBB,
   Function *F = OrigLoop->getHeader()->getParent();
   Loop *ParentLoop = OrigLoop->getParentLoop();
 
-  Loop *NewLoop = LI->AllocateLoop(); // TODO(Fabian) Check that loop is correctly created, was new Loop()
+  Loop *NewLoop = LI->AllocateLoop();
   if (ParentLoop)
     ParentLoop->addChildLoop(NewLoop);
   else
@@ -849,5 +828,3 @@ llvm::DuplicateInstructionsInSplitBetween(BasicBlock *BB, BasicBlock *PredBB,
 
   return NewBB;
 }
-
-// clang-format on

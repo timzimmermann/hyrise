@@ -1,6 +1,7 @@
 #pragma once
 
 #include <llvm/Transforms/Utils/Cloning.h>
+#include "llvm/IR/Function.h"
 
 #include <unordered_map>
 
@@ -21,7 +22,7 @@
  * pruning mechanism to also consider runtime information.
  *
  * Two LLVM files (CloneFunction.cpp and InlineFunction.cpp) have been copied from the LLVM repository located at
- * https://github.com/llvm-mirror/llvm/tree/release_50 to the llvm/ subdirectory.
+ * https://github.com/llvm-mirror/llvm/tree/release_60 to the llvm/ subdirectory.
  * The changes made to these files are documented by the corresponding diff files.
  * The files are excluded from automatic formatting and linting to keep them as close to the original source code as
  * possible.
@@ -46,7 +47,7 @@ struct SpecializationContext {
 // Inlines a function call
 // This method extends the corresponding function in the LLVM framework
 bool InlineFunction(llvm::CallSite CS, llvm::InlineFunctionInfo& IFI, llvm::AAResults* CalleeAAR, bool InsertLifetime,
-                    SpecializationContext& Context);
+                    llvm::Function *ForwardVarArgsTo, SpecializationContext& Context);
 
 // Clones a function body into a new empty function while pruning switch and branch instructions
 // This method extends the corresponding function in the LLVM framework
