@@ -48,9 +48,10 @@ TEST_F(FixedStringVectorTest, Iterator) {
   auto fixedstring_vector = FixedStringVector(5u);
   fixedstring_vector.push_back("str1");
   fixedstring_vector.push_back("str1");
+  char new_string[6] = "abcde";
 
   for (auto it = fixedstring_vector.begin(); it != fixedstring_vector.end(); ++it) {
-    *it = FixedString("abcde");
+    *it = FixedString(new_string, 5);
   }
 
   EXPECT_EQ(fixedstring_vector[0u], "abcde");
@@ -97,8 +98,9 @@ TEST_F(FixedStringVectorTest, ReverseIterator) {
   EXPECT_EQ(last_value->string(), "str3");
   EXPECT_EQ(first_value->string(), "str1");
 
+  char new_string[6] = "abcde";
   for (auto it = fixedstring_vector.rbegin(); it != fixedstring_vector.rend(); ++it) {
-    *it = FixedString("abcd");
+    *it = FixedString(new_string, 5);
   }
 
   EXPECT_EQ(fixedstring_vector[0u], "abcd");

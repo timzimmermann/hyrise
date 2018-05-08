@@ -11,20 +11,12 @@
 
 namespace opossum {
 
-FixedString::FixedString(const std::string& string) : _mem(new char[string.size()]{}), _maximum_length(string.size()) {
-  std::memcpy(_mem, string.c_str(), _maximum_length);
-}
-
 FixedString::FixedString(char* mem, size_t string_length)
-    : _mem(mem), _maximum_length(string_length), _owns_memory(false) {}
+    : _mem(mem), _maximum_length(string_length) {}
 
 FixedString::FixedString(const FixedString& other)
     : _mem(new char[other._maximum_length]{}), _maximum_length(other._maximum_length) {
   std::memcpy(_mem, other._mem, _maximum_length);
-}
-
-FixedString::~FixedString() {
-  if (_owns_memory) delete[] _mem;
 }
 
 FixedString& FixedString::operator=(const FixedString& other) {
@@ -79,6 +71,10 @@ void FixedString::swap(FixedString& other) {
 std::ostream& operator<<(std::ostream& os, const FixedString& obj) { return os << obj.string(); }
 
 void swap(FixedString lhs, FixedString rhs) { lhs.swap(rhs); }
+
+bool operator<(const FixedString& lhs, const std::string& rhs) { return lhs.string() < rhs; }
+
+bool operator<(const std::string& lhs, const FixedString& rhs) { return lhs < rhs.string(); }
 
 bool operator==(const FixedString& lhs, const std::string& rhs) { return lhs.string() == rhs; }
 
